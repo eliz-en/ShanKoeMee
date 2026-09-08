@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes" />
+  <title>Shan Koe Mee</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="game-wrapper">
+  <div class="game-header">
+    <div class="game-title">
+      🀄 SHAN KOE MEE
+      <small>ရှမ်းကိုးမီး</small>
+    </div>
+    <div class="chip-display">
+      <span class="label">Your Chips</span>
+      <span class="value" id="myChipsDisplay">500</span>
+    </div>
+  </div>
+
+  <div class="dealer-area">
+    <div class="dealer-label">
+      <span>👑 DEALER</span>
+      <span class="chips">💰 <span id="dealerChips">1000</span></span>
+    </div>
+    <div id="dealerCards" class="dealer-cards"></div>
+    <div id="dealerResult" style="text-align:center;min-height:24px;"></div>
+  </div>
+
+  <div class="players-grid" id="playersGrid">
+    <div class="player-seat" id="playerSeat">
+      <div class="name-row">
+        <span class="name">YOU <span class="you-badge">⭐</span></span>
+        <span class="chips">🪙 <span id="playerChipsDisplay">500</span></span>
+      </div>
+      <div id="playerCards" class="cards"></div>
+      <div id="playerResult" style="text-align:center;min-height:22px;"></div>
+      <div id="playerStatus" style="text-align:center;"></div>
+    </div>
+  </div>
+
+  <div class="action-panel">
+    <div class="status" id="statusMessage">Place your bet and DEAL</div>
+    <div class="bet-group">
+      <label>Bet</label>
+      <input type="number" id="betAmount" value="10" min="1" step="1" />
+    </div>
+    <button class="btn btn-gold" id="dealBtn">DEAL</button>
+    <button class="btn btn-dark" id="hitBtn" disabled>HIT</button>
+    <button class="btn btn-dark" id="standBtn" disabled>STAND</button>
+  </div>
+</div>
+
+<!-- Overlay for chip-out message -->
+<div id="chipOutOverlay" class="overlay" style="display:none;">
+  <div class="overlay-content">
+    <div class="emoji">💀</div>
+    <h2>No Chips Left!</h2>
+    <p>You've run out of chips. Don't worry, we'll give you another 500 chips to keep playing!</p>
+    <button class="btn-restart" id="restartBtn">🔄 Play Again</button>
+  </div>
+</div>
+
+<script>
+  (function() {
+    // DOM refs
+    const dealerCardsDiv = document.getElementById('dealerCards');
+    const dealerChipsSpan = document.getElementById('dealerChips');
+    const dealerResultDiv = document.getElementById('dealerResult');
+    const playerCardsDiv = document.getElementById('playerCards');
+    const playerChipsDisplay = document.getElementById('playerChipsDisplay');
+    const myChipsSpan = document.getElementById('myChipsDisplay');
+    const playerResultDiv = document.getElementById('playerResult');
+    const playerStatusDiv = document.getElementById('playerStatus');
+    const playerSeat = document.getElementById('playerSeat');
+    const statusMsg = document.getElementById('statusMessage');
+    const betInput = document.getElementById('betAmount');
+    const dealBtn = document.getElementById('dealBtn');
+    const hitBtn = document.getElementById('hitBtn');
+    const standBtn = document.getElementById('standBtn');
+    const chipOutOverlay = document.getElementById('chipOutOverlay');
+    const restartBtn = document.getElementById('restartBtn');
+
+    // Game state
+    let playerChips = 500;
+    let dealerChips = 1000;
+    let playerHand = [];
+    let dealerHand = [];
+    let deck = [];
+    let roundActive = false;
+    let roundEnded = false;
+    let playerTurn = false;
+    let currentBet = 10;
+    let roundInProgress = false;
+    let dealerCardsRevealed = false;
+
+    // Card helpers
+    function createDeck() {
+      const suits = ['♠','♥','♦','♣'];
+      const ranks = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+      const deck = [];
+      for (let s of suits) {
+        for (let r of ranks) {
+          let value = 0;
+          if (r === 'A') value = 1;
+          else if (['J','Q','K'].includes(r)) value = 0;
+          else value = parseInt(r);
+          deck.push({ rank: r, suit: s, value });
+        }
+      }
+      return deck;
+    }
+
+    function shuffle(arr) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    function evaluateHand(hand) {
+      if (!hand || hand.length === 0) {
+        return { score: 0, multiplier: 1, type: 'none', tier: 1, natural: null };
+      }
+      
+      let sum = hand.reduce((acc, c) => acc + c.value, 0) % 10;
+      let mult = 1;
+      let tier = 1;
+      let type = 'normal';
+      
+      const rankCount = {};
+      hand.forEach(c => rankCount[c.rank] = (rankCount[c.rank] || 0) + 1);
+      const counts = Object.values(rankCount);
+      
+      if (counts.includes(3)) {
+        mult = 3;
+        tier = 3;
+        type = 'triple';
+      } else if (hand.length === 2 && counts.includes(2)) {
+        mult = 2;
+        tier = 2;
+        type = 'pair';
+      }
+      
+      let natural = null;
+      if (hand.length === 2) {
+        if (sum === 9) natural = 'koe';
+        else if (sum === 8) natural = 'chit';
+      }
+      
+      return { score: sum, multiplier: mult, type, tier, natural };
+    }
+
+    // Render
+    function createCardElement(card, hidden = false) {
+      const div = document.createElement('div');
+      div.className = 'card';
+      if (hidden) {
+        div.classList.add('card-back');
+        div.innerHTML = '<span class="back-pattern">♠</span>';
+        return div;
+      }
+      const isRed = card.suit === '♥' || card.suit === '♦';
+      div.classList.add(isRed ? 'red' : 'black');
+      div.classList.add('card-reveal');
+      div.innerHTML = `
+        <div class="rank-suit">
+          <span class="rank">${card.rank}</span>
+          <span class="suit">${card.suit}</span>
+        </div>
+      `;
+      return div;
+    }
+
+    function renderCards(container, hand, hideAll = false) {
+      container.innerHTML = '';
+      if (!hand || hand.length === 0) return;
+      hand.forEach((card) => {
+        container.appendChild(createCardElement(card, hideAll));
+      });
+    }
+
+    function updateUI() {
+      // Dealer - both cards hidden initially
+      const hideDealer = (roundActive && !roundEnded && !dealerCardsRevealed);
+      renderCards(dealerCardsDiv, dealerHand, hideDealer);
+      dealerChipsSpan.textContent = dealerChips;
+      
+      // Dealer result
+      if (roundEnded && dealerHand.length >= 2) {
+        const handEval = evaluateHand(dealerHand);
+        let text = `${handEval.score} pts`;
+        if (handEval.type !== 'normal') text += ` · ${handEval.type.toUpperCase()}`;
+        if (handEval.multiplier > 1) text += ` ×${handEval.multiplier}`;
+        dealerResultDiv.innerHTML = `<span class="result-tag push">${text}</span>`;
+      } else {
+        dealerResultDiv.innerHTML = '';
+      }
+
+      // Player
+      renderCards(playerCardsDiv, playerHand, false);
+      playerChipsDisplay.textContent = playerChips;
+      myChipsSpan.textContent = playerChips;
+
+      // Player status
+      if (roundActive && !roundEnded) {
+        if (playerTurn) {
+          playerStatusDiv.innerHTML = '<span class="status-badge acting">🎯 Your Turn</span>';
+          playerSeat.classList.add('active-turn');
+        } else {
+          playerStatusDiv.innerHTML = '<span class="status-badge stood">⏳ Waiting</span>';
+          playerSeat.classList.remove('active-turn');
+        }
+      } else if (roundEnded) {
+        playerSeat.classList.remove('active-turn');
+      } else {
+        playerStatusDiv.innerHTML = '';
+        playerSeat.classList.remove('active-turn');
+      }
+
+      // Player result
+      if (roundEnded && playerHand.length >= 2) {
+        const handEval = evaluateHand(playerHand);
+        let text = `${handEval.score} pts`;
+        if (handEval.type !== 'normal') text += ` · ${handEval.type.toUpperCase()}`;
+        if (handEval.multiplier > 1) text += ` ×${handEval.multiplier}`;
+        playerResultDiv.innerHTML = `<span class="result-tag push">${text}</span>`;
+      } else {
+        playerResultDiv.innerHTML = '';
+      }
+
+      // Buttons
+      const canAct = playerTurn && roundActive && !roundEnded;
+      hitBtn.disabled = !canAct;
+      standBtn.disabled = !canAct;
+      dealBtn.disabled = roundActive || roundEnded;
+      betInput.disabled = roundActive || roundEnded;
+
+      // Status
+      if (roundEnded) {
+        // Status set in showdown
+      } else if (roundActive) {
+        if (playerTurn) {
+          statusMsg.textContent = '🎯 Your turn! Hit or Stand';
+        } else {
+          statusMsg.textContent = '🤖 Dealer is thinking...';
+        }
+      } else {
+        statusMsg.textContent = '🃏 Place your bet and DEAL';
+      }
+    }
+
+    // Game logic
+    function startRound() {
+      if (roundActive || roundEnded || roundInProgress) return;
+      
+      const bet = parseInt(betInput.value) || 10;
+      if (bet < 1) { alert('Bet must be at least 1'); return; }
+      if (bet > playerChips) { alert('Not enough chips!'); return; }
+
+      roundInProgress = true;
+      dealerCardsRevealed = false;
+      currentBet = bet;
+      playerChips -= bet;
+      deck = shuffle(createDeck());
+      
+      playerHand = [deck.pop(), deck.pop()];
+      dealerHand = [deck.pop(), deck.pop()];
+
+      roundActive = true;
+      roundEnded = false;
+      playerTurn = true;
+
+      // Check naturals
+      const playerEval = evaluateHand(playerHand);
+      const dealerEval = evaluateHand(dealerHand);
+      
+      if (playerEval.natural || dealerEval.natural) {
+        playerTurn = false;
+        let msg = '⚡ Natural!';
+        if (playerEval.natural) msg += ` You have ${playerEval.natural.toUpperCase()}`;
+        if (dealerEval.natural) msg += ` · Dealer has ${dealerEval.natural.toUpperCase()}`;
+        statusMsg.textContent = msg;
+        updateUI();
+        // Longer delay for natural reveal
+        setTimeout(() => {
+          dealerCardsRevealed = true;
+          updateUI();
+          setTimeout(() => showdown(), 1500);
+        }, 1000);
+        return;
+      }
+
+      updateUI();
+      statusMsg.textContent = '🎯 Your turn! Hit or Stand';
+      roundInProgress = false;
+    }
+
+    function playerHit() {
+      if (!playerTurn || !roundActive || roundEnded || roundInProgress) return;
+      if (deck.length === 0) { alert('No cards left!'); return; }
+      
+      playerHand.push(deck.pop());
+      updateUI();
+      
+      if (playerHand.length >= 3) {
+        playerTurn = false;
+        statusMsg.textContent = '⏳ Dealer\'s turn...';
+        roundInProgress = true;
+        updateUI();
+        setTimeout(() => {
+          dealerCardsRevealed = true;
+          updateUI();
+          setTimeout(() => dealerTurn(), 1000);
+        }, 800);
+      }
+    }
+
+    function playerStand() {
+      if (!playerTurn || !roundActive || roundEnded || roundInProgress) return;
+      playerTurn = false;
+      statusMsg.textContent = '⏳ Dealer\'s turn...';
+      roundInProgress = true;
+      updateUI();
+      setTimeout(() => {
+        dealerCardsRevealed = true;
+        updateUI();
+        setTimeout(() => dealerTurn(), 1000);
+      }, 800);
+    }
+
+    function dealerTurn() {
+      if (roundEnded) return;
+      
+      let dealerEval = evaluateHand(dealerHand);
+      while (dealerEval.score < 4 && deck.length > 0 && dealerHand.length < 3) {
+        dealerHand.push(deck.pop());
+        dealerEval = evaluateHand(dealerHand);
+      }
+      
+      statusMsg.textContent = '🤖 Dealer played!';
+      updateUI();
+      setTimeout(() => showdown(), 1200);
+    }
+
+    function showdown() {
+      if (roundEnded) return;
+      
+      roundActive = false;
+      roundEnded = true;
+      playerTurn = false;
+      roundInProgress = false;
+      dealerCardsRevealed = true;
+
+      const playerEval = evaluateHand(playerHand);
+      const dealerEval = evaluateHand(dealerHand);
+
+      let playerWins = false;
+      let resultText = '';
+      let winAmount = 0;
+
+      // Determine winner with tier comparison
+      if (playerEval.tier === 3 && dealerEval.tier === 3) {
+        const rankOrder = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+        const pRank = rankOrder.indexOf(playerHand[0].rank);
+        const dRank = rankOrder.indexOf(dealerHand[0].rank);
+        playerWins = pRank > dRank;
+      } else if (playerEval.tier === 3) {
+        playerWins = true;
+      } else if (dealerEval.tier === 3) {
+        playerWins = false;
+      } else if (playerEval.tier === 2 && dealerEval.tier === 2) {
+        playerWins = playerEval.score > dealerEval.score;
+      } else if (playerEval.tier === 2) {
+        playerWins = true;
+      } else if (dealerEval.tier === 2) {
+        playerWins = false;
+      } else {
+        playerWins = playerEval.score > dealerEval.score;
+      }
+
+      // Handle ties - dealer wins
+      if (playerEval.score === dealerEval.score && playerEval.tier === dealerEval.tier) {
+        playerWins = false;
+      }
+
+      // Payout
+      if (playerWins) {
+        winAmount = currentBet * playerEval.multiplier;
+        playerChips += winAmount;
+        resultText = `🎉 You win! +${winAmount} chips`;
+        if (playerEval.multiplier > 1) resultText += ` (×${playerEval.multiplier})`;
+        playerResultDiv.innerHTML = `<span class="result-tag win">WIN +${winAmount}</span>`;
+        dealerResultDiv.innerHTML = `<span class="result-tag lose">LOSE</span>`;
+      } else {
+        dealerChips += currentBet;
+        if (playerEval.score === dealerEval.score && playerEval.tier === dealerEval.tier) {
+          resultText = `🤝 Tie! Dealer wins.`;
+          playerResultDiv.innerHTML = `<span class="result-tag push">PUSH</span>`;
+          dealerResultDiv.innerHTML = `<span class="result-tag push">PUSH</span>`;
+        } else {
+          resultText = `😔 Dealer wins! You lost ${currentBet} chips`;
+          if (dealerEval.multiplier > 1) resultText += ` (×${dealerEval.multiplier})`;
+          playerResultDiv.innerHTML = `<span class="result-tag lose">LOSE -${currentBet}</span>`;
+          dealerResultDiv.innerHTML = `<span class="result-tag win">WIN</span>`;
+        }
+      }
+
+      statusMsg.textContent = resultText;
+      updateUI();
+
+      // Check if player ran out of chips
+      if (playerChips <= 0) {
+        setTimeout(() => {
+          chipOutOverlay.style.display = 'flex';
+        }, 1200);
+        return;
+      }
+
+      // Auto reset after longer delay for continuous play
+      setTimeout(() => {
+        resetGame();
+      }, 3000);
+    }
+
+    function resetGame() {
+      playerHand = [];
+      dealerHand = [];
+      deck = [];
+      roundActive = false;
+      roundEnded = false;
+      playerTurn = false;
+      roundInProgress = false;
+      dealerCardsRevealed = false;
+      playerResultDiv.innerHTML = '';
+      dealerResultDiv.innerHTML = '';
+      playerStatusDiv.innerHTML = '';
+      playerSeat.classList.remove('active-turn');
+      statusMsg.textContent = '🃏 Place your bet and DEAL';
+      updateUI();
+    }
+
+    function restartGame() {
+      chipOutOverlay.style.display = 'none';
+      playerChips = 500;
+      dealerChips = 1000;
+      resetGame();
+    }
+
+    // Event listeners
+    dealBtn.addEventListener('click', startRound);
+    hitBtn.addEventListener('click', playerHit);
+    standBtn.addEventListener('click', playerStand);
+    restartBtn.addEventListener('click', restartGame);
+
+    betInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') startRound();
+    });
+
+    // Initial render
+    updateUI();
+    console.log('🎴 Shan Koe Mee - Continuous Play Mode');
+
+    // Prevent double clicks during transitions
+    document.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', function(e) {
+        if (this.disabled) e.preventDefault();
+      });
+    });
+  })();
+</script>
+</body>
+</html>
