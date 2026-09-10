@@ -120,6 +120,20 @@
       return arr;
     }
 
+    /**
+     * Evaluate hand with correct Shan Koe Mee rules:
+     * 
+     * TIER 3 (3x / Triple Reward) - highest hierarchy:
+     *   - Three of a kind (same rank, 3 cards)
+     *   - OR three cards of the same suit (flush)
+     * 
+     * TIER 2 (2x / Double Reward - Pok or Pwint):
+     *   - Two cards of the same rank (pair)
+     *   - OR two cards of the same suit (flush pair)
+     * 
+     * TIER 1 (1x / Standard Win):
+     *   - Normal point hand
+     */
     function evaluateHand(hand) {
       if (!hand || hand.length === 0) {
         return { score: 0, multiplier: 1, type: 'none', tier: 1, natural: null };
@@ -130,20 +144,39 @@
       let tier = 1;
       let type = 'normal';
       
+      // Check for three of a kind (same rank) - TIER 3
       const rankCount = {};
       hand.forEach(c => rankCount[c.rank] = (rankCount[c.rank] || 0) + 1);
-      const counts = Object.values(rankCount);
+      const rankCounts = Object.values(rankCount);
       
-      if (counts.includes(3)) {
+      // Check for three of the same suit (flush) - TIER 3
+      const suitCount = {};
+      hand.forEach(c => suitCount[c.suit] = (suitCount[c.suit] || 0) + 1);
+      const suitCounts = Object.values(suitCount);
+      
+      if (hand.length === 3 && rankCounts.includes(3)) {
+        // Three of a kind
         mult = 3;
         tier = 3;
         type = 'triple';
-      } else if (hand.length === 2 && counts.includes(2)) {
+      } else if (hand.length === 3 && suitCounts.includes(3)) {
+        // Three cards of the same suit (flush)
+        mult = 3;
+        tier = 3;
+        type = 'flush3';
+      } else if (hand.length === 2 && rankCounts.includes(2)) {
+        // Two of a kind (pair) - Pok
         mult = 2;
         tier = 2;
         type = 'pair';
+      } else if (hand.length === 2 && suitCounts.includes(2)) {
+        // Two cards of the same suit - Pwint
+        mult = 2;
+        tier = 2;
+        type = 'flush2';
       }
       
+      // Natural 8 (Chit) or 9 (Koe) - only with exactly 2 cards
       let natural = null;
       if (hand.length === 2) {
         if (sum === 9) natural = 'koe';
@@ -182,6 +215,16 @@
       });
     }
 
+    function getHandTypeLabel(type) {
+      switch (type) {
+        case 'triple': return 'TRIPLE';
+        case 'flush3': return 'FLUSH ×3';
+        case 'pair': return 'POK ×2';
+        case 'flush2': return 'PWINT ×2';
+        default: return '';
+      }
+    }
+
     function updateUI() {
       // Dealer - both cards hidden initially
       const hideDealer = (roundActive && !roundEnded && !dealerCardsRevealed);
@@ -192,7 +235,8 @@
       if (roundEnded && dealerHand.length >= 2) {
         const handEval = evaluateHand(dealerHand);
         let text = `${handEval.score} pts`;
-        if (handEval.type !== 'normal') text += ` · ${handEval.type.toUpperCase()}`;
+        const typeLabel = getHandTypeLabel(handEval.type);
+        if (typeLabel) text += ` · ${typeLabel}`;
         if (handEval.multiplier > 1) text += ` ×${handEval.multiplier}`;
         dealerResultDiv.innerHTML = `<span class="result-tag push">${text}</span>`;
       } else {
@@ -224,7 +268,8 @@
       if (roundEnded && playerHand.length >= 2) {
         const handEval = evaluateHand(playerHand);
         let text = `${handEval.score} pts`;
-        if (handEval.type !== 'normal') text += ` · ${handEval.type.toUpperCase()}`;
+        const typeLabel = getHandTypeLabel(handEval.type);
+        if (typeLabel) text += ` · ${typeLabel}`;
         if (handEval.multiplier > 1) text += ` ×${handEval.multiplier}`;
         playerResultDiv.innerHTML = `<span class="result-tag push">${text}</span>`;
       } else {
@@ -284,7 +329,6 @@
         if (dealerEval.natural) msg += ` · Dealer has ${dealerEval.natural.toUpperCase()}`;
         statusMsg.textContent = msg;
         updateUI();
-        // Longer delay for natural reveal
         setTimeout(() => {
           dealerCardsRevealed = true;
           updateUI();
@@ -358,15 +402,18 @@
       const dealerEval = evaluateHand(dealerHand);
 
       let playerWins = false;
-      let resultText = '';
-      let winAmount = 0;
 
       // Determine winner with tier comparison
       if (playerEval.tier === 3 && dealerEval.tier === 3) {
-        const rankOrder = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-        const pRank = rankOrder.indexOf(playerHand[0].rank);
-        const dRank = rankOrder.indexOf(dealerHand[0].rank);
-        playerWins = pRank > dRank;
+        // Both have tier 3 - compare by rank (triple) or score
+        if (playerEval.type === 'triple' && dealerEval.type === 'triple') {
+          const rankOrder = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+          const pRank = rankOrder.indexOf(playerHand[0].rank);
+          const dRank = rankOrder.indexOf(dealerHand[0].rank);
+          playerWins = pRank > dRank;
+        } else {
+          playerWins = playerEval.score > dealerEval.score;
+        }
       } else if (playerEval.tier === 3) {
         playerWins = true;
       } else if (dealerEval.tier === 3) {
@@ -386,25 +433,56 @@
         playerWins = false;
       }
 
-      // Payout
+      // ============================================
+      // CORRECT PAYOUT RULES:
+      // ============================================
+      // Standard Win (1x): Bet 10 → keep 10 + win 10 = 20 total (net +10)
+      // Double Win (2x):   Bet 10 → keep 10 + win 20 = 30 total (net +20)
+      // Triple Win (3x):   Bet 10 → keep 10 + win 30 = 40 total (net +30)
+      //
+      // Since we already deducted the bet upfront, we add back:
+      //   bet (to return stake) + (bet × multiplier) (the winnings)
+      // = bet × (1 + multiplier)
+      //
+      // LOSS: Player loses their bet (already deducted)
+      // PUSH: Player gets their bet back
+      // ============================================
+      
+      let resultText = '';
+      
       if (playerWins) {
-        winAmount = currentBet * playerEval.multiplier;
-        playerChips += winAmount;
+        const winAmount = currentBet * playerEval.multiplier;  // winnings only
+        const totalReturn = currentBet + winAmount;            // stake back + winnings
+        playerChips += totalReturn;
+        dealerChips -= winAmount;
+        
         resultText = `🎉 You win! +${winAmount} chips`;
-        if (playerEval.multiplier > 1) resultText += ` (×${playerEval.multiplier})`;
+        if (playerEval.multiplier > 1) {
+          const label = getHandTypeLabel(playerEval.type);
+          resultText += ` (${label})`;
+        }
         playerResultDiv.innerHTML = `<span class="result-tag win">WIN +${winAmount}</span>`;
-        dealerResultDiv.innerHTML = `<span class="result-tag lose">LOSE</span>`;
+        dealerResultDiv.innerHTML = `<span class="result-tag lose">-${winAmount}</span>`;
       } else {
-        dealerChips += currentBet;
+        // Check for push (tie)
         if (playerEval.score === dealerEval.score && playerEval.tier === dealerEval.tier) {
-          resultText = `🤝 Tie! Dealer wins.`;
+          // Push - return the bet
+          playerChips += currentBet;
+          resultText = `🤝 Tie! Your bet is returned.`;
           playerResultDiv.innerHTML = `<span class="result-tag push">PUSH</span>`;
           dealerResultDiv.innerHTML = `<span class="result-tag push">PUSH</span>`;
         } else {
-          resultText = `😔 Dealer wins! You lost ${currentBet} chips`;
-          if (dealerEval.multiplier > 1) resultText += ` (×${dealerEval.multiplier})`;
-          playerResultDiv.innerHTML = `<span class="result-tag lose">LOSE -${currentBet}</span>`;
-          dealerResultDiv.innerHTML = `<span class="result-tag win">WIN</span>`;
+          // Loss - dealer wins the bet
+          const lossAmount = currentBet * dealerEval.multiplier;
+          dealerChips += lossAmount;
+          
+          resultText = `😔 Dealer wins! You lost ${lossAmount} chips`;
+          if (dealerEval.multiplier > 1) {
+            const label = getHandTypeLabel(dealerEval.type);
+            resultText += ` (${label})`;
+          }
+          playerResultDiv.innerHTML = `<span class="result-tag lose">LOSE -${lossAmount}</span>`;
+          dealerResultDiv.innerHTML = `<span class="result-tag win">+${lossAmount}</span>`;
         }
       }
 
@@ -461,7 +539,7 @@
 
     // Initial render
     updateUI();
-    console.log('🎴 Shan Koe Mee - Continuous Play Mode');
+    console.log('🎴 Shan Koe Mee - Correct Payout Rules');
 
     // Prevent double clicks during transitions
     document.querySelectorAll('button').forEach(btn => {
@@ -471,5 +549,6 @@
     });
   })();
 </script>
+
 </body>
 </html>
