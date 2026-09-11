@@ -32,7 +32,7 @@
     <div class="player-seat" id="playerSeat">
       <div class="name-row">
         <span class="name">YOU <span class="you-badge">⭐</span></span>
-        <span class="chips">🪙 <span id="playerChipsDisplay">500</span></span>
+        <span class="chips">💰 <span id="playerChipsDisplay">500</span></span>
       </div>
       <div id="playerCards" class="cards"></div>
       <div id="playerResult" style="text-align:center;min-height:22px;"></div>
@@ -62,8 +62,14 @@
 </div>
 
 <script>
-  (function() {
-    // DOM refs
+  // ============================================================
+  //  SHAN KOE MEE — Complete Game Logic
+  //  Suit hierarchy: ♠ Spade > ♥ Heart > ♦ Diamond > ♣ Club
+  // ============================================================
+  (function () {
+    'use strict';
+
+    // ----- DOM refs -----
     const dealerCardsDiv = document.getElementById('dealerCards');
     const dealerChipsSpan = document.getElementById('dealerChips');
     const dealerResultDiv = document.getElementById('dealerResult');
@@ -81,7 +87,7 @@
     const chipOutOverlay = document.getElementById('chipOutOverlay');
     const restartBtn = document.getElementById('restartBtn');
 
-    // Game state
+    // ----- Game state -----
     let playerChips = 500;
     let playerHand = [];
     let dealerHand = [];
@@ -93,21 +99,41 @@
     let roundInProgress = false;
     let dealerCardsRevealed = false;
 
-    // Card helpers
+    // ============================================================
+    // CONSTANTS — Suit & Rank Hierarchy
+    // ============================================================
+    // Suit hierarchy from GREATEST to LEAST:
+    //   ♠ Spade (4) > ♥ Heart (3) > ♦ Diamond (2) > ♣ Club (1)
+    const SUIT_RANK = {
+      '♠': 4,   // Spade   — highest
+      '♥': 3,   // Heart
+      '♦': 2,   // Diamond
+      '♣': 1    // Club    — lowest
+    };
+
+    // Rank face values (used only for pair-comparison tie-breaks)
+    const RANK_ORDER = {
+      'A': 1,  '2': 2,  '3': 3,  '4': 4,  '5': 5,  '6': 6,  '7': 7,
+      '8': 8,  '9': 9,  '10': 10, 'J': 11, 'Q': 12, 'K': 13
+    };
+
+    // ============================================================
+    // DECK HELPERS
+    // ============================================================
     function createDeck() {
-      const suits = ['♠','♥','♦','♣'];
-      const ranks = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-      const deck = [];
-      for (let s of suits) {
-        for (let r of ranks) {
+      const suits = ['♠', '♥', '♦', '♣'];
+      const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+      const d = [];
+      for (const s of suits) {
+        for (const r of ranks) {
           let value = 0;
           if (r === 'A') value = 1;
-          else if (['J','Q','K'].includes(r)) value = 0;
-          else value = parseInt(r);
-          deck.push({ rank: r, suit: s, value });
+          else if (r === 'J' || r === 'Q' || r === 'K' || r === '10') value = 0;
+          else value = parseInt(r, 10);
+          d.push({ rank: r, suit: s, value });
         }
       }
-      return deck;
+      return d;
     }
 
     function shuffle(arr) {
@@ -118,52 +144,178 @@
       return arr;
     }
 
+    // ============================================================
+    // HAND EVALUATION
+    // ------------------------------------------------------------
+    // Returns:
+    //   score         : point total (mod 10)
+    //   multiplier    : 1, 2, or 3
+    //   tier          : 1 (normal), 2 (pair/flush2), 3 (triple/flush3)
+    //   type          : 'normal' | 'pair' | 'flush2' | 'triple' | 'flush3'
+    //   pairRankValue : face value of the pair/triple rank (0 if none)
+    //   highCardSuit  : suit-rank of the highest suit in hand
+    //   natural       : 'koe' (9) | 'chit' (8) | null
+    // ============================================================
     function evaluateHand(hand) {
       if (!hand || hand.length === 0) {
-        return { score: 0, multiplier: 1, type: 'none', tier: 1, natural: null };
+        return {
+          score: 0, multiplier: 1, tier: 1, type: 'none',
+          pairRankValue: 0, highCardSuit: 0, natural: null
+        };
       }
-      
-      let sum = hand.reduce((acc, c) => acc + c.value, 0) % 10;
-      let mult = 1;
+
+      const score = hand.reduce((sum, c) => sum + c.value, 0) % 10;
+
+      // Count ranks and suits
+      const rankCount = {};
+      const suitCount = {};
+      for (const c of hand) {
+        rankCount[c.rank] = (rankCount[c.rank] || 0) + 1;
+        suitCount[c.suit] = (suitCount[c.suit] || 0) + 1;
+      }
+      const rankCounts = Object.values(rankCount);
+      const suitCounts = Object.values(suitCount);
+
+      // Highest suit-rank present in the hand (for tie-breaking)
+      const highCardSuit = Math.max(...hand.map(c => SUIT_RANK[c.suit]));
+
+      let multiplier = 1;
       let tier = 1;
       let type = 'normal';
-      
-      const rankCount = {};
-      hand.forEach(c => rankCount[c.rank] = (rankCount[c.rank] || 0) + 1);
-      const rankCounts = Object.values(rankCount);
-      
-      const suitCount = {};
-      hand.forEach(c => suitCount[c.suit] = (suitCount[c.suit] || 0) + 1);
-      const suitCounts = Object.values(suitCount);
-      
+      let pairRankValue = 0;
+
+      // ----- TIER 3: Three of a kind OR three-card flush -----
       if (hand.length === 3 && rankCounts.includes(3)) {
-        mult = 3;
-        tier = 3;
-        type = 'triple';
+        multiplier = 3; tier = 3; type = 'triple';
+        const tripleRank = Object.keys(rankCount).find(r => rankCount[r] === 3);
+        pairRankValue = RANK_ORDER[tripleRank];
       } else if (hand.length === 3 && suitCounts.includes(3)) {
-        mult = 3;
-        tier = 3;
-        type = 'flush3';
-      } else if (hand.length === 2 && rankCounts.includes(2)) {
-        mult = 2;
-        tier = 2;
-        type = 'pair';
-      } else if (hand.length === 2 && suitCounts.includes(2)) {
-        mult = 2;
-        tier = 2;
-        type = 'flush2';
+        multiplier = 3; tier = 3; type = 'flush3';
       }
-      
+      // ----- TIER 2: Pair (Pok) OR two-card flush (Pwint) -----
+      else if (hand.length === 2 && rankCounts.includes(2)) {
+        multiplier = 2; tier = 2; type = 'pair';
+        pairRankValue = RANK_ORDER[hand[0].rank];
+      } else if (hand.length === 2 && suitCounts.includes(2)) {
+        multiplier = 2; tier = 2; type = 'flush2';
+      }
+
+      // Natural 8 (Chit) / 9 (Koe) — only with exactly 2 cards
       let natural = null;
       if (hand.length === 2) {
-        if (sum === 9) natural = 'koe';
-        else if (sum === 8) natural = 'chit';
+        if (score === 9) natural = 'koe';
+        else if (score === 8) natural = 'chit';
       }
-      
-      return { score: sum, multiplier: mult, type, tier, natural };
+
+      return { score, multiplier, tier, type, pairRankValue, highCardSuit, natural };
     }
 
-    function createCardElement(card, hidden = false) {
+    // ============================================================
+    // HAND COMPARISON
+    // ------------------------------------------------------------
+    // Evaluation order:
+    //   1. Higher tier wins  (3 > 2 > 1)
+    //   2. Same tier ≥ 2  →  higher pairRankValue wins
+    //   3. Higher score wins
+    //   4. Same score     →  compare highCardSuit
+    //      (♠ Spade > ♥ Heart > ♦ Diamond > ♣ Club)
+    //
+    // Returns: 1 if A wins, -1 if B wins, 0 if push.
+    // ============================================================
+    function compareHands(evalA, evalB) {
+      // 1. Tier
+      if (evalA.tier !== evalB.tier) {
+        return evalA.tier > evalB.tier ? 1 : -1;
+      }
+
+      // 2. Pair-rank (only meaningful for tier 2/3)
+      if (evalA.tier >= 2) {
+        if (evalA.pairRankValue !== evalB.pairRankValue) {
+          return evalA.pairRankValue > evalB.pairRankValue ? 1 : -1;
+        }
+      }
+
+      // 3. Point score
+      if (evalA.score !== evalB.score) {
+        return evalA.score > evalB.score ? 1 : -1;
+      }
+
+      // 4. Suit tie-break
+      if (evalA.highCardSuit !== evalB.highCardSuit) {
+        return evalA.highCardSuit > evalB.highCardSuit ? 1 : -1;
+      }
+
+      return 0;
+    }
+
+    // ============================================================
+    // PAYOUT CALCULATION
+    // ------------------------------------------------------------
+    // The base bet is already deducted at DEAL time.
+    //
+    // PLAYER WINS:
+    //   winnings    = bet × playerMultiplier
+    //   netChange   = bet (stake back) + winnings
+    //
+    // DEALER WINS:
+    //   totalLoss   = bet × dealerMultiplier  (from player's perspective)
+    //   extraLoss   = totalLoss - bet         (base already taken)
+    //   netChange   = -extraLoss
+    //
+    // PUSH:
+    //   netChange   = bet  (refund stake)
+    // ============================================================
+    function calculatePayout(playerEval, dealerEval, bet) {
+      const cmp = compareHands(playerEval, dealerEval);
+
+      if (cmp > 0) {
+        // ---- Player wins ----
+        const winnings = bet * playerEval.multiplier;
+        return {
+          outcome: 'win',
+          netChange: bet + winnings,
+          displayAmount: winnings,
+          message: `🎉 You win! +${winnings} chips` +
+            (playerEval.multiplier > 1 ? ` (${getHandLabel(playerEval.type)})` : '')
+        };
+      }
+
+      if (cmp < 0) {
+        // ---- Dealer wins ----
+        const totalLoss = bet * dealerEval.multiplier;
+        const extraLoss = totalLoss - bet; // base bet already deducted
+        return {
+          outcome: 'lose',
+          netChange: -extraLoss,
+          displayAmount: totalLoss,
+          message: `😔 Dealer wins! You lost ${totalLoss} chips` +
+            (dealerEval.multiplier > 1 ? ` (${getHandLabel(dealerEval.type)})` : '')
+        };
+      }
+
+      // ---- Push ----
+      return {
+        outcome: 'push',
+        netChange: bet,
+        displayAmount: bet,
+        message: `🤝 Tie! Your bet is returned.`
+      };
+    }
+
+    function getHandLabel(type) {
+      switch (type) {
+        case 'triple':  return 'TRIPLE ×3';
+        case 'flush3':  return 'FLUSH ×3';
+        case 'pair':    return 'POK ×2';
+        case 'flush2':  return 'PWINT ×2';
+        default:        return '';
+      }
+    }
+
+    // ============================================================
+    // RENDER HELPERS
+    // ============================================================
+    function createCardElement(card, hidden) {
       const div = document.createElement('div');
       div.className = 'card';
       if (hidden) {
@@ -172,60 +324,45 @@
         return div;
       }
       const isRed = card.suit === '♥' || card.suit === '♦';
-      div.classList.add(isRed ? 'red' : 'black');
-      div.classList.add('card-reveal');
+      div.classList.add(isRed ? 'red' : 'black', 'card-reveal');
       div.innerHTML = `
         <div class="rank-suit">
           <span class="rank">${card.rank}</span>
           <span class="suit">${card.suit}</span>
-        </div>
-      `;
+        </div>`;
       return div;
     }
 
-    function renderCards(container, hand, hideAll = false) {
+    function renderCards(container, hand, hideAll) {
       container.innerHTML = '';
       if (!hand || hand.length === 0) return;
-      hand.forEach((card) => {
+      for (const card of hand) {
         container.appendChild(createCardElement(card, hideAll));
-      });
-    }
-
-    function getHandTypeLabel(type) {
-      switch (type) {
-        case 'triple': return 'TRIPLE';
-        case 'flush3': return 'FLUSH ×3';
-        case 'pair': return 'POK ×2';
-        case 'flush2': return 'PWINT ×2';
-        default: return '';
       }
     }
 
     function updateUI() {
-      // Dealer - both cards hidden initially
       const hideDealer = (roundActive && !roundEnded && !dealerCardsRevealed);
       renderCards(dealerCardsDiv, dealerHand, hideDealer);
-      // Dealer always shows infinity symbol
       dealerChipsSpan.textContent = '∞';
-      
-      // Dealer result
+
+      // Dealer result tag
       if (roundEnded && dealerHand.length >= 2) {
-        const handEval = evaluateHand(dealerHand);
-        let text = `${handEval.score} pts`;
-        const typeLabel = getHandTypeLabel(handEval.type);
-        if (typeLabel) text += ` · ${typeLabel}`;
-        if (handEval.multiplier > 1) text += ` ×${handEval.multiplier}`;
+        const ev = evaluateHand(dealerHand);
+        let text = `${ev.score} pts`;
+        const label = getHandLabel(ev.type);
+        if (label) text += ` · ${label}`;
         dealerResultDiv.innerHTML = `<span class="result-tag push">${text}</span>`;
       } else {
         dealerResultDiv.innerHTML = '';
       }
 
-      // Player
+      // Player cards
       renderCards(playerCardsDiv, playerHand, false);
       playerChipsDisplay.textContent = playerChips;
       myChipsSpan.textContent = playerChips;
 
-      // Player status
+      // Player status badge
       if (roundActive && !roundEnded) {
         if (playerTurn) {
           playerStatusDiv.innerHTML = '<span class="status-badge acting">🎯 Your Turn</span>';
@@ -234,20 +371,17 @@
           playerStatusDiv.innerHTML = '<span class="status-badge stood">⏳ Waiting</span>';
           playerSeat.classList.remove('active-turn');
         }
-      } else if (roundEnded) {
-        playerSeat.classList.remove('active-turn');
       } else {
         playerStatusDiv.innerHTML = '';
         playerSeat.classList.remove('active-turn');
       }
 
-      // Player result
+      // Player result tag
       if (roundEnded && playerHand.length >= 2) {
-        const handEval = evaluateHand(playerHand);
-        let text = `${handEval.score} pts`;
-        const typeLabel = getHandTypeLabel(handEval.type);
-        if (typeLabel) text += ` · ${typeLabel}`;
-        if (handEval.multiplier > 1) text += ` ×${handEval.multiplier}`;
+        const ev = evaluateHand(playerHand);
+        let text = `${ev.score} pts`;
+        const label = getHandLabel(ev.type);
+        if (label) text += ` · ${label}`;
         playerResultDiv.innerHTML = `<span class="result-tag push">${text}</span>`;
       } else {
         playerResultDiv.innerHTML = '';
@@ -260,34 +394,33 @@
       dealBtn.disabled = roundActive || roundEnded;
       betInput.disabled = roundActive || roundEnded;
 
-      // Status
-      if (roundEnded) {
-        // Status set in showdown
-      } else if (roundActive) {
-        if (playerTurn) {
-          statusMsg.textContent = '🎯 Your turn! Hit or Stand';
-        } else {
-          statusMsg.textContent = '🤖 Dealer is thinking...';
-        }
-      } else {
+      // Status message
+      if (!roundEnded && roundActive) {
+        statusMsg.textContent = playerTurn
+          ? '🎯 Your turn! Hit or Stand'
+          : '🤖 Dealer is thinking...';
+      } else if (!roundActive && !roundEnded) {
         statusMsg.textContent = '🃏 Place your bet and DEAL';
       }
+      // (showdown message is set explicitly by showdown())
     }
 
-    // Game logic
+    // ============================================================
+    // GAME FLOW
+    // ============================================================
     function startRound() {
       if (roundActive || roundEnded || roundInProgress) return;
-      
-      const bet = parseInt(betInput.value) || 10;
+
+      const bet = parseInt(betInput.value, 10) || 10;
       if (bet < 1) { alert('Bet must be at least 1'); return; }
       if (bet > playerChips) { alert('Not enough chips!'); return; }
 
       roundInProgress = true;
       dealerCardsRevealed = false;
       currentBet = bet;
-      playerChips -= bet;
+      playerChips -= bet; // base bet taken upfront
+
       deck = shuffle(createDeck());
-      
       playerHand = [deck.pop(), deck.pop()];
       dealerHand = [deck.pop(), deck.pop()];
 
@@ -295,10 +428,10 @@
       roundEnded = false;
       playerTurn = true;
 
-      // Check naturals
       const playerEval = evaluateHand(playerHand);
       const dealerEval = evaluateHand(dealerHand);
-      
+
+      // Natural 8/9 → auto-showdown
       if (playerEval.natural || dealerEval.natural) {
         playerTurn = false;
         let msg = '⚡ Natural!';
@@ -309,7 +442,7 @@
         setTimeout(() => {
           dealerCardsRevealed = true;
           updateUI();
-          setTimeout(() => showdown(), 1500);
+          setTimeout(showdown, 1500);
         }, 1000);
         return;
       }
@@ -322,19 +455,19 @@
     function playerHit() {
       if (!playerTurn || !roundActive || roundEnded || roundInProgress) return;
       if (deck.length === 0) { alert('No cards left!'); return; }
-      
+
       playerHand.push(deck.pop());
       updateUI();
-      
+
       if (playerHand.length >= 3) {
         playerTurn = false;
-        statusMsg.textContent = '⏳ Dealer\'s turn...';
+        statusMsg.textContent = "⏳ Dealer's turn...";
         roundInProgress = true;
         updateUI();
         setTimeout(() => {
           dealerCardsRevealed = true;
           updateUI();
-          setTimeout(() => dealerTurn(), 1000);
+          setTimeout(dealerTurn, 1000);
         }, 800);
       }
     }
@@ -342,33 +475,33 @@
     function playerStand() {
       if (!playerTurn || !roundActive || roundEnded || roundInProgress) return;
       playerTurn = false;
-      statusMsg.textContent = '⏳ Dealer\'s turn...';
+      statusMsg.textContent = "⏳ Dealer's turn...";
       roundInProgress = true;
       updateUI();
       setTimeout(() => {
         dealerCardsRevealed = true;
         updateUI();
-        setTimeout(() => dealerTurn(), 1000);
+        setTimeout(dealerTurn, 1000);
       }, 800);
     }
 
     function dealerTurn() {
       if (roundEnded) return;
-      
+
       let dealerEval = evaluateHand(dealerHand);
       while (dealerEval.score < 4 && deck.length > 0 && dealerHand.length < 3) {
         dealerHand.push(deck.pop());
         dealerEval = evaluateHand(dealerHand);
       }
-      
+
       statusMsg.textContent = '🤖 Dealer played!';
       updateUI();
-      setTimeout(() => showdown(), 1200);
+      setTimeout(showdown, 1200);
     }
 
     function showdown() {
       if (roundEnded) return;
-      
+
       roundActive = false;
       roundEnded = true;
       playerTurn = false;
@@ -378,103 +511,35 @@
       const playerEval = evaluateHand(playerHand);
       const dealerEval = evaluateHand(dealerHand);
 
-      let playerWins = false;
+      const payout = calculatePayout(playerEval, dealerEval, currentBet);
 
-      // Determine winner with tier comparison
-      if (playerEval.tier === 3 && dealerEval.tier === 3) {
-        if (playerEval.type === 'triple' && dealerEval.type === 'triple') {
-          const rankOrder = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-          const pRank = rankOrder.indexOf(playerHand[0].rank);
-          const dRank = rankOrder.indexOf(dealerHand[0].rank);
-          playerWins = pRank > dRank;
-        } else {
-          playerWins = playerEval.score > dealerEval.score;
-        }
-      } else if (playerEval.tier === 3) {
-        playerWins = true;
-      } else if (dealerEval.tier === 3) {
-        playerWins = false;
-      } else if (playerEval.tier === 2 && dealerEval.tier === 2) {
-        playerWins = playerEval.score > dealerEval.score;
-      } else if (playerEval.tier === 2) {
-        playerWins = true;
-      } else if (dealerEval.tier === 2) {
-        playerWins = false;
+      // Apply the net chip change
+      playerChips += payout.netChange;
+
+      statusMsg.textContent = payout.message;
+
+      // Result tags
+      if (payout.outcome === 'win') {
+        playerResultDiv.innerHTML = `<span class="result-tag win">WIN +${payout.displayAmount}</span>`;
+        dealerResultDiv.innerHTML = `<span class="result-tag lose">-${payout.displayAmount}</span>`;
+      } else if (payout.outcome === 'lose') {
+        playerResultDiv.innerHTML = `<span class="result-tag lose">LOSE -${payout.displayAmount}</span>`;
+        dealerResultDiv.innerHTML = `<span class="result-tag win">+${payout.displayAmount}</span>`;
       } else {
-        playerWins = playerEval.score > dealerEval.score;
+        playerResultDiv.innerHTML = `<span class="result-tag push">PUSH</span>`;
+        dealerResultDiv.innerHTML = `<span class="result-tag push">PUSH</span>`;
       }
 
-      // Handle ties - dealer wins
-      if (playerEval.score === dealerEval.score && playerEval.tier === dealerEval.tier) {
-        playerWins = false;
-      }
-
-      // ============================================
-      // PAYOUT RULES (Dealer has unlimited chips)
-      // ============================================
-      // Standard Win (1x): Bet 10 → keep 10 + win 10 = 20 total
-      // Double Win (2x):   Bet 10 → keep 10 + win 20 = 30 total
-      // Triple Win (3x):   Bet 10 → keep 10 + win 30 = 40 total
-      //
-      // When DEALER wins:
-      // Standard Loss (1x): Player loses bet
-      // Double Loss (2x):   Player pays 2× bet to dealer
-      // Triple Loss (3x):   Player pays 3× bet to dealer
-      // ============================================
-      
-      let resultText = '';
-      
-      if (playerWins) {
-        const winAmount = currentBet * playerEval.multiplier;
-        const totalReturn = currentBet + winAmount;
-        playerChips += totalReturn;
-        // Dealer has unlimited chips - no deduction
-        
-        resultText = `🎉 You win! +${winAmount} chips`;
-        if (playerEval.multiplier > 1) {
-          const label = getHandTypeLabel(playerEval.type);
-          resultText += ` (${label})`;
-        }
-        playerResultDiv.innerHTML = `<span class="result-tag win">WIN +${winAmount}</span>`;
-        dealerResultDiv.innerHTML = `<span class="result-tag lose">-${winAmount}</span>`;
-      } else {
-        // Check for push (tie)
-        if (playerEval.score === dealerEval.score && playerEval.tier === dealerEval.tier) {
-          // Push - return the bet
-          playerChips += currentBet;
-          resultText = `🤝 Tie! Your bet is returned.`;
-          playerResultDiv.innerHTML = `<span class="result-tag push">PUSH</span>`;
-          dealerResultDiv.innerHTML = `<span class="result-tag push">PUSH</span>`;
-        } else {
-          // Loss - dealer wins based on DEALER's multiplier
-          const lossAmount = currentBet * dealerEval.multiplier;
-          playerChips -= lossAmount;
-          
-          resultText = `😔 Dealer wins! You lost ${lossAmount} chips`;
-          if (dealerEval.multiplier > 1) {
-            const label = getHandTypeLabel(dealerEval.type);
-            resultText += ` (${label})`;
-          }
-          playerResultDiv.innerHTML = `<span class="result-tag lose">LOSE -${lossAmount}</span>`;
-          dealerResultDiv.innerHTML = `<span class="result-tag win">+${lossAmount}</span>`;
-        }
-      }
-
-      statusMsg.textContent = resultText;
       updateUI();
 
-      // Check if player ran out of chips
+      // Chip-out check
       if (playerChips <= 0) {
-        setTimeout(() => {
-          chipOutOverlay.style.display = 'flex';
-        }, 1200);
+        setTimeout(() => { chipOutOverlay.style.display = 'flex'; }, 1200);
         return;
       }
 
-      // Auto reset after longer delay for continuous play
-      setTimeout(() => {
-        resetGame();
-      }, 3000);
+      // Auto-reset for continuous play
+      setTimeout(resetGame, 3000);
     }
 
     function resetGame() {
@@ -500,7 +565,9 @@
       resetGame();
     }
 
-    // Event listeners
+    // ============================================================
+    // EVENT LISTENERS
+    // ============================================================
     dealBtn.addEventListener('click', startRound);
     hitBtn.addEventListener('click', playerHit);
     standBtn.addEventListener('click', playerStand);
@@ -512,14 +579,9 @@
 
     // Initial render
     updateUI();
-    console.log('🎴 Shan Koe Mee - Dealer has unlimited chips');
 
-    // Prevent double clicks during transitions
-    document.querySelectorAll('button').forEach(btn => {
-      btn.addEventListener('click', function(e) {
-        if (this.disabled) e.preventDefault();
-      });
-    });
+    // Expose for debugging (optional)
+    window.__skm = { evaluateHand, compareHands, calculatePayout, SUIT_RANK };
   })();
 </script>
 
