@@ -64,7 +64,16 @@
 <script>
   // ============================================================
   //  SHAN KOE MEE — Complete Game Logic
+  //
   //  Suit hierarchy: ♠ Spade > ♥ Heart > ♦ Diamond > ♣ Club
+  //
+  //  Pair-vs-Pair tie-breaker:  Score → Pair Rank → Pair Suit
+  //  Triple-vs-Triple:          Score → Triple Rank → Triple Suit
+  //  Mixed Tier-2:              Score → Highest Suit in Hand
+  //  Normal vs Normal:          Score → Highest Suit in Hand
+  //
+  //  Dealer has unlimited chips (∞).
+  //  Player loses bet × dealerMultiplier when dealer wins with a special hand.
   // ============================================================
   (function () {
     'use strict';
@@ -87,7 +96,26 @@
     const chipOutOverlay = document.getElementById('chipOutOverlay');
     const restartBtn = document.getElementById('restartBtn');
 
-    // ----- Game state -----
+    // ============================================================
+    //  CONSTANTS — Suit & Rank Hierarchy
+    // ============================================================
+    // Suit hierarchy from GREATEST to LEAST:
+    //   ♠ Spade (4) > ♥ Heart (3) > ♦ Diamond (2) > ♣ Club (1)
+    const SUIT_RANK = {
+      '♠': 4,   // Spade   — highest
+      '♥': 3,   // Heart
+      '♦': 2,   // Diamond
+      '♣': 1    // Club    — lowest
+    };
+
+    const RANK_ORDER = {
+      'A': 1,  '2': 2,  '3': 3,  '4': 4,  '5': 5,  '6': 6,  '7': 7,
+      '8': 8,  '9': 9,  '10': 10, 'J': 11, 'Q': 12, 'K': 13
+    };
+
+    // ============================================================
+    //  GAME STATE
+    // ============================================================
     let playerChips = 500;
     let playerHand = [];
     let dealerHand = [];
@@ -100,25 +128,7 @@
     let dealerCardsRevealed = false;
 
     // ============================================================
-    // CONSTANTS — Suit & Rank Hierarchy
-    // ============================================================
-    // Suit hierarchy from GREATEST to LEAST:
-    //   ♠ Spade (4) > ♥ Heart (3) > ♦ Diamond (2) > ♣ Club (1)
-    const SUIT_RANK = {
-      '♠': 4,   // Spade   — highest
-      '♥': 3,   // Heart
-      '♦': 2,   // Diamond
-      '♣': 1    // Club    — lowest
-    };
-
-    // Rank face values (used only for pair-comparison tie-breaks)
-    const RANK_ORDER = {
-      'A': 1,  '2': 2,  '3': 3,  '4': 4,  '5': 5,  '6': 6,  '7': 7,
-      '8': 8,  '9': 9,  '10': 10, 'J': 11, 'Q': 12, 'K': 13
-    };
-
-    // ============================================================
-    // DECK HELPERS
+    //  DECK HELPERS
     // ============================================================
     function createDeck() {
       const suits = ['♠', '♥', '♦', '♣'];
@@ -128,7 +138,7 @@
         for (const r of ranks) {
           let value = 0;
           if (r === 'A') value = 1;
-          else if (r === 'J' || r === 'Q' || r === 'K' || r === '10') value = 0;
+          else if (r === '10' || r === 'J' || r === 'Q' || r === 'K') value = 0;
           else value = parseInt(r, 10);
           d.push({ rank: r, suit: s, value });
         }
@@ -145,22 +155,23 @@
     }
 
     // ============================================================
-    // HAND EVALUATION
+    //  HAND EVALUATION
     // ------------------------------------------------------------
     // Returns:
-    //   score         : point total (mod 10)
-    //   multiplier    : 1, 2, or 3
-    //   tier          : 1 (normal), 2 (pair/flush2), 3 (triple/flush3)
-    //   type          : 'normal' | 'pair' | 'flush2' | 'triple' | 'flush3'
-    //   pairRankValue : face value of the pair/triple rank (0 if none)
-    //   highCardSuit  : suit-rank of the highest suit in hand
-    //   natural       : 'koe' (9) | 'chit' (8) | null
+    //   score           : mod-10 point total
+    //   multiplier      : 1, 2, or 3
+    //   tier            : 1 (normal), 2 (pair/flush2), 3 (triple/flush3)
+    //   type            : 'normal' | 'pair' | 'flush2' | 'triple' | 'flush3'
+    //   pairRankValue   : face value of the pair/triple rank (0 if none)
+    //   pairHighSuit    : highest suit-rank inside the pair/triple (0 if none)
+    //   highCardSuit    : highest suit-rank in the entire hand
+    //   natural         : 'koe' (9) | 'chit' (8) | null
     // ============================================================
     function evaluateHand(hand) {
       if (!hand || hand.length === 0) {
         return {
           score: 0, multiplier: 1, tier: 1, type: 'none',
-          pairRankValue: 0, highCardSuit: 0, natural: null
+          pairRankValue: 0, pairHighSuit: 0, highCardSuit: 0, natural: null
         };
       }
 
@@ -176,28 +187,37 @@
       const rankCounts = Object.values(rankCount);
       const suitCounts = Object.values(suitCount);
 
-      // Highest suit-rank present in the hand (for tie-breaking)
+      // Highest suit-rank in the whole hand (for normal tie-breaks)
       const highCardSuit = Math.max(...hand.map(c => SUIT_RANK[c.suit]));
 
       let multiplier = 1;
       let tier = 1;
       let type = 'normal';
       let pairRankValue = 0;
+      let pairHighSuit = 0;
 
       // ----- TIER 3: Three of a kind OR three-card flush -----
       if (hand.length === 3 && rankCounts.includes(3)) {
         multiplier = 3; tier = 3; type = 'triple';
         const tripleRank = Object.keys(rankCount).find(r => rankCount[r] === 3);
         pairRankValue = RANK_ORDER[tripleRank];
+        pairHighSuit = Math.max(
+          ...hand.filter(c => c.rank === tripleRank).map(c => SUIT_RANK[c.suit])
+        );
       } else if (hand.length === 3 && suitCounts.includes(3)) {
         multiplier = 3; tier = 3; type = 'flush3';
+        const flushSuit = Object.keys(suitCount).find(s => suitCount[s] === 3);
+        pairHighSuit = SUIT_RANK[flushSuit];
       }
       // ----- TIER 2: Pair (Pok) OR two-card flush (Pwint) -----
       else if (hand.length === 2 && rankCounts.includes(2)) {
         multiplier = 2; tier = 2; type = 'pair';
         pairRankValue = RANK_ORDER[hand[0].rank];
+        pairHighSuit = Math.max(SUIT_RANK[hand[0].suit], SUIT_RANK[hand[1].suit]);
       } else if (hand.length === 2 && suitCounts.includes(2)) {
         multiplier = 2; tier = 2; type = 'flush2';
+        const flushSuit = Object.keys(suitCount).find(s => suitCount[s] === 2);
+        pairHighSuit = SUIT_RANK[flushSuit];
       }
 
       // Natural 8 (Chit) / 9 (Koe) — only with exactly 2 cards
@@ -207,69 +227,112 @@
         else if (score === 8) natural = 'chit';
       }
 
-      return { score, multiplier, tier, type, pairRankValue, highCardSuit, natural };
+      return { score, multiplier, tier, type, pairRankValue, pairHighSuit, highCardSuit, natural };
     }
 
     // ============================================================
-    // HAND COMPARISON
+    //  HAND COMPARISON
     // ------------------------------------------------------------
-    // Evaluation order:
-    //   1. Higher tier wins  (3 > 2 > 1)
-    //   2. Same tier ≥ 2  →  higher pairRankValue wins
-    //   3. Higher score wins
-    //   4. Same score     →  compare highCardSuit
-    //      (♠ Spade > ♥ Heart > ♦ Diamond > ♣ Club)
-    //
     // Returns: 1 if A wins, -1 if B wins, 0 if push.
+    //
+    // PAIR vs PAIR (both type 'pair'):
+    //   Step A — Higher SCORE wins
+    //   Step B — Higher PAIR RANK wins
+    //   Step C — Higher PAIR SUIT wins (♠ > ♥ > ♦ > ♣)
+    //
+    // TRIPLE vs TRIPLE (both type 'triple'):
+    //   Step A — Higher SCORE wins
+    //   Step B — Higher TRIPLE RANK wins
+    //   Step C — Higher TRIPLE SUIT wins
+    //
+    // Other combinations:
+    //   Different tiers → higher tier wins
+    //   Same tier → score → highest suit in hand
     // ============================================================
     function compareHands(evalA, evalB) {
-      // 1. Tier
+      // 1. Different tiers — higher tier wins
       if (evalA.tier !== evalB.tier) {
         return evalA.tier > evalB.tier ? 1 : -1;
       }
 
-      // 2. Pair-rank (only meaningful for tier 2/3)
-      if (evalA.tier >= 2) {
+      // ---- Same tier ----
+
+      // Both pairs OR both triples (matched types)
+      if (evalA.tier >= 2 && evalA.type === evalB.type &&
+          (evalA.type === 'pair' || evalA.type === 'triple')) {
+
+        // Step A: Score (mod 10)
+        if (evalA.score !== evalB.score) {
+          return evalA.score > evalB.score ? 1 : -1;
+        }
+
+        // Step B: Pair/Triple rank face value
         if (evalA.pairRankValue !== evalB.pairRankValue) {
           return evalA.pairRankValue > evalB.pairRankValue ? 1 : -1;
         }
+
+        // Step C: Suit of the pair/triple
+        if (evalA.pairHighSuit !== evalB.pairHighSuit) {
+          return evalA.pairHighSuit > evalB.pairHighSuit ? 1 : -1;
+        }
+
+        return 0; // identical
       }
 
-      // 3. Point score
+      // Both flushes (flush2 vs flush2, or flush3 vs flush3)
+      if (evalA.tier >= 2 && evalA.type === evalB.type &&
+          (evalA.type === 'flush2' || evalA.type === 'flush3')) {
+        if (evalA.score !== evalB.score) {
+          return evalA.score > evalB.score ? 1 : -1;
+        }
+        if (evalA.pairHighSuit !== evalB.pairHighSuit) {
+          return evalA.pairHighSuit > evalB.pairHighSuit ? 1 : -1;
+        }
+        return 0;
+      }
+
+      // Mixed tier-2 (pair vs flush2) — score, then highest suit
+      if (evalA.tier === 2 && evalB.tier === 2) {
+        if (evalA.score !== evalB.score) {
+          return evalA.score > evalB.score ? 1 : -1;
+        }
+        if (evalA.highCardSuit !== evalB.highCardSuit) {
+          return evalA.highCardSuit > evalB.highCardSuit ? 1 : -1;
+        }
+        return 0;
+      }
+
+      // Normal hands (tier 1): score → highest suit
       if (evalA.score !== evalB.score) {
         return evalA.score > evalB.score ? 1 : -1;
       }
-
-      // 4. Suit tie-break
       if (evalA.highCardSuit !== evalB.highCardSuit) {
         return evalA.highCardSuit > evalB.highCardSuit ? 1 : -1;
       }
-
       return 0;
     }
 
     // ============================================================
-    // PAYOUT CALCULATION
+    //  PAYOUT CALCULATION
     // ------------------------------------------------------------
-    // The base bet is already deducted at DEAL time.
+    // Base bet is deducted at DEAL time.
     //
     // PLAYER WINS:
-    //   winnings    = bet × playerMultiplier
-    //   netChange   = bet (stake back) + winnings
+    //   winnings   = bet × playerMultiplier
+    //   netChange  = bet (stake back) + winnings
     //
     // DEALER WINS:
-    //   totalLoss   = bet × dealerMultiplier  (from player's perspective)
-    //   extraLoss   = totalLoss - bet         (base already taken)
-    //   netChange   = -extraLoss
+    //   totalLoss  = bet × dealerMultiplier
+    //   extraLoss  = totalLoss - bet   (base already taken)
+    //   netChange  = -extraLoss
     //
     // PUSH:
-    //   netChange   = bet  (refund stake)
+    //   netChange  = bet (refund)
     // ============================================================
     function calculatePayout(playerEval, dealerEval, bet) {
       const cmp = compareHands(playerEval, dealerEval);
 
       if (cmp > 0) {
-        // ---- Player wins ----
         const winnings = bet * playerEval.multiplier;
         return {
           outcome: 'win',
@@ -281,9 +344,8 @@
       }
 
       if (cmp < 0) {
-        // ---- Dealer wins ----
         const totalLoss = bet * dealerEval.multiplier;
-        const extraLoss = totalLoss - bet; // base bet already deducted
+        const extraLoss = totalLoss - bet;
         return {
           outcome: 'lose',
           netChange: -extraLoss,
@@ -293,7 +355,6 @@
         };
       }
 
-      // ---- Push ----
       return {
         outcome: 'push',
         netChange: bet,
@@ -313,7 +374,7 @@
     }
 
     // ============================================================
-    // RENDER HELPERS
+    //  RENDER HELPERS
     // ============================================================
     function createCardElement(card, hidden) {
       const div = document.createElement('div');
@@ -406,7 +467,7 @@
     }
 
     // ============================================================
-    // GAME FLOW
+    //  GAME FLOW
     // ============================================================
     function startRound() {
       if (roundActive || roundEnded || roundInProgress) return;
@@ -489,6 +550,7 @@
       if (roundEnded) return;
 
       let dealerEval = evaluateHand(dealerHand);
+      // Dealer AI: hit on score < 4, up to 3 cards
       while (dealerEval.score < 4 && deck.length > 0 && dealerHand.length < 3) {
         dealerHand.push(deck.pop());
         dealerEval = evaluateHand(dealerHand);
@@ -566,7 +628,7 @@
     }
 
     // ============================================================
-    // EVENT LISTENERS
+    //  EVENT LISTENERS
     // ============================================================
     dealBtn.addEventListener('click', startRound);
     hitBtn.addEventListener('click', playerHit);
