@@ -22,7 +22,7 @@
   <div class="dealer-area">
     <div class="dealer-label">
       <span>👑 DEALER</span>
-      <span class="chips">💰 <span id="dealerChips">1000</span></span>
+      <span class="chips">💰 <span id="dealerChips">∞</span></span>
     </div>
     <div id="dealerCards" class="dealer-cards"></div>
     <div id="dealerResult" style="text-align:center;min-height:24px;"></div>
@@ -52,7 +52,6 @@
   </div>
 </div>
 
-<!-- Overlay for chip-out message -->
 <div id="chipOutOverlay" class="overlay" style="display:none;">
   <div class="overlay-content">
     <div class="emoji">💀</div>
@@ -84,7 +83,6 @@
 
     // Game state
     let playerChips = 500;
-    let dealerChips = 1000;
     let playerHand = [];
     let dealerHand = [];
     let deck = [];
@@ -120,20 +118,6 @@
       return arr;
     }
 
-    /**
-     * Evaluate hand with correct Shan Koe Mee rules:
-     * 
-     * TIER 3 (3x / Triple Reward) - highest hierarchy:
-     *   - Three of a kind (same rank, 3 cards)
-     *   - OR three cards of the same suit (flush)
-     * 
-     * TIER 2 (2x / Double Reward - Pok or Pwint):
-     *   - Two cards of the same rank (pair)
-     *   - OR two cards of the same suit (flush pair)
-     * 
-     * TIER 1 (1x / Standard Win):
-     *   - Normal point hand
-     */
     function evaluateHand(hand) {
       if (!hand || hand.length === 0) {
         return { score: 0, multiplier: 1, type: 'none', tier: 1, natural: null };
@@ -144,39 +128,32 @@
       let tier = 1;
       let type = 'normal';
       
-      // Check for three of a kind (same rank) - TIER 3
       const rankCount = {};
       hand.forEach(c => rankCount[c.rank] = (rankCount[c.rank] || 0) + 1);
       const rankCounts = Object.values(rankCount);
       
-      // Check for three of the same suit (flush) - TIER 3
       const suitCount = {};
       hand.forEach(c => suitCount[c.suit] = (suitCount[c.suit] || 0) + 1);
       const suitCounts = Object.values(suitCount);
       
       if (hand.length === 3 && rankCounts.includes(3)) {
-        // Three of a kind
         mult = 3;
         tier = 3;
         type = 'triple';
       } else if (hand.length === 3 && suitCounts.includes(3)) {
-        // Three cards of the same suit (flush)
         mult = 3;
         tier = 3;
         type = 'flush3';
       } else if (hand.length === 2 && rankCounts.includes(2)) {
-        // Two of a kind (pair) - Pok
         mult = 2;
         tier = 2;
         type = 'pair';
       } else if (hand.length === 2 && suitCounts.includes(2)) {
-        // Two cards of the same suit - Pwint
         mult = 2;
         tier = 2;
         type = 'flush2';
       }
       
-      // Natural 8 (Chit) or 9 (Koe) - only with exactly 2 cards
       let natural = null;
       if (hand.length === 2) {
         if (sum === 9) natural = 'koe';
@@ -186,7 +163,6 @@
       return { score: sum, multiplier: mult, type, tier, natural };
     }
 
-    // Render
     function createCardElement(card, hidden = false) {
       const div = document.createElement('div');
       div.className = 'card';
@@ -229,7 +205,8 @@
       // Dealer - both cards hidden initially
       const hideDealer = (roundActive && !roundEnded && !dealerCardsRevealed);
       renderCards(dealerCardsDiv, dealerHand, hideDealer);
-      dealerChipsSpan.textContent = dealerChips;
+      // Dealer always shows infinity symbol
+      dealerChipsSpan.textContent = '∞';
       
       // Dealer result
       if (roundEnded && dealerHand.length >= 2) {
@@ -405,7 +382,6 @@
 
       // Determine winner with tier comparison
       if (playerEval.tier === 3 && dealerEval.tier === 3) {
-        // Both have tier 3 - compare by rank (triple) or score
         if (playerEval.type === 'triple' && dealerEval.type === 'triple') {
           const rankOrder = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
           const pRank = rankOrder.indexOf(playerHand[0].rank);
@@ -434,27 +410,25 @@
       }
 
       // ============================================
-      // CORRECT PAYOUT RULES:
+      // PAYOUT RULES (Dealer has unlimited chips)
       // ============================================
-      // Standard Win (1x): Bet 10 → keep 10 + win 10 = 20 total (net +10)
-      // Double Win (2x):   Bet 10 → keep 10 + win 20 = 30 total (net +20)
-      // Triple Win (3x):   Bet 10 → keep 10 + win 30 = 40 total (net +30)
+      // Standard Win (1x): Bet 10 → keep 10 + win 10 = 20 total
+      // Double Win (2x):   Bet 10 → keep 10 + win 20 = 30 total
+      // Triple Win (3x):   Bet 10 → keep 10 + win 30 = 40 total
       //
-      // Since we already deducted the bet upfront, we add back:
-      //   bet (to return stake) + (bet × multiplier) (the winnings)
-      // = bet × (1 + multiplier)
-      //
-      // LOSS: Player loses their bet (already deducted)
-      // PUSH: Player gets their bet back
+      // When DEALER wins:
+      // Standard Loss (1x): Player loses bet
+      // Double Loss (2x):   Player pays 2× bet to dealer
+      // Triple Loss (3x):   Player pays 3× bet to dealer
       // ============================================
       
       let resultText = '';
       
       if (playerWins) {
-        const winAmount = currentBet * playerEval.multiplier;  // winnings only
-        const totalReturn = currentBet + winAmount;            // stake back + winnings
+        const winAmount = currentBet * playerEval.multiplier;
+        const totalReturn = currentBet + winAmount;
         playerChips += totalReturn;
-        dealerChips -= winAmount;
+        // Dealer has unlimited chips - no deduction
         
         resultText = `🎉 You win! +${winAmount} chips`;
         if (playerEval.multiplier > 1) {
@@ -472,9 +446,9 @@
           playerResultDiv.innerHTML = `<span class="result-tag push">PUSH</span>`;
           dealerResultDiv.innerHTML = `<span class="result-tag push">PUSH</span>`;
         } else {
-          // Loss - dealer wins the bet
+          // Loss - dealer wins based on DEALER's multiplier
           const lossAmount = currentBet * dealerEval.multiplier;
-          dealerChips += lossAmount;
+          playerChips -= lossAmount;
           
           resultText = `😔 Dealer wins! You lost ${lossAmount} chips`;
           if (dealerEval.multiplier > 1) {
@@ -523,7 +497,6 @@
     function restartGame() {
       chipOutOverlay.style.display = 'none';
       playerChips = 500;
-      dealerChips = 1000;
       resetGame();
     }
 
@@ -539,7 +512,7 @@
 
     // Initial render
     updateUI();
-    console.log('🎴 Shan Koe Mee - Correct Payout Rules');
+    console.log('🎴 Shan Koe Mee - Dealer has unlimited chips');
 
     // Prevent double clicks during transitions
     document.querySelectorAll('button').forEach(btn => {
