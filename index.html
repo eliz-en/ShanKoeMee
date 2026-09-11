@@ -65,12 +65,14 @@
   // ============================================================
   //  SHAN KOE MEE 
   //
-  //  Suit hierarchy: ♠ Spade > ♥ Heart > ♦ Diamond > ♣ Club
+  //  Suit hierarchy:  ♠ Spade > ♥ Heart > ♦ Diamond > ♣ Club
   //
-  //  Comparison order:
-  //    1. Higher multiplier tier wins (3× > 2× > 1×)
-  //    2. Higher POINT score wins
-  //    3. Suit hierarchy of the highest suit (tie-break)
+  //  ★ COMPARISON ORDER:
+  //    1. Higher POINT score wins
+  //    2. If points tie → higher HIGHEST-CARD FACE VALUE wins
+  //       (K > Q > J > 10 > 9 > ... > A)
+  //    3. If face value ties → higher SUIT of that card wins
+  //       (♠ > ♥ > ♦ > ♣)
   // ============================================================
   (function () {
     'use strict';
@@ -94,14 +96,19 @@
     const restartBtn = document.getElementById('restartBtn');
 
     // ============================================================
-    //  CONSTANTS — Suit Hierarchy
+    //  CONSTANTS
     // ============================================================
-    // ♠ Spade (4) > ♥ Heart (3) > ♦ Diamond (2) > ♣ Club (1)
     const SUIT_RANK = {
-      '♠': 4,
-      '♥': 3,
-      '♦': 2,
-      '♣': 1
+      '♠': 4,   // Spade   — highest
+      '♥': 3,   // Heart
+      '♦': 2,   // Diamond
+      '♣': 1    // Club    — lowest
+    };
+
+    // Rank face values (K highest, A lowest)
+    const RANK_VALUE = {
+      'A': 1,  '2': 2,  '3': 3,  '4': 4,  '5': 5,  '6': 6,  '7': 7,
+      '8': 8,  '9': 9,  '10': 10, 'J': 11, 'Q': 12, 'K': 13
     };
 
     // ============================================================
@@ -149,55 +156,52 @@
     //  HAND EVALUATION
     // ------------------------------------------------------------
     // Returns:
-    //   score         : mod-10 point total
-    //   multiplier    : 1 (normal), 2 (2 same suit), 3 (3 same suit)
-    //   type          : 'normal' | 'pok2' | 'pok3'
-    //   pokSuit       : suit of the pok (0 if none)
-    //   highCardSuit  : highest suit-rank in the entire hand
-    //   natural       : 'koe' (9) | 'chit' (8) | null
-    //
-    // POK RULES:
-    //   - 2 cards of the SAME SUIT → multiplier 2, type 'pok2'
-    //   - 3 cards of the SAME SUIT → multiplier 3, type 'pok3'
-    //   - Same RANK is NOT special (just a normal point hand)
+    //   score           : mod-10 point total
+    //   multiplier      : 1 | 2 | 3  (2 = 2 same suit, 3 = 3 same suit)
+    //   type            : 'normal' | 'pwint2' | 'pwint3'
+    //   highRankValue   : face value of the highest-ranking card
+    //   highRankSuit    : suit-rank of that highest-ranking card
+    //   natural         : 'koe' (9) | 'chit' (8) | null
     // ============================================================
     function evaluateHand(hand) {
       if (!hand || hand.length === 0) {
         return {
           score: 0, multiplier: 1, type: 'normal',
-          pokSuit: 0, highCardSuit: 0, natural: null
+          highRankValue: 0, highRankSuit: 0, natural: null
         };
       }
 
       const score = hand.reduce((sum, c) => sum + c.value, 0) % 10;
 
-      // Count suits only (we don't care about ranks for multipliers)
+      // Count suits (for multiplier)
       const suitCount = {};
       for (const c of hand) {
         suitCount[c.suit] = (suitCount[c.suit] || 0) + 1;
       }
       const suitCounts = Object.values(suitCount);
 
-      // Highest suit-rank in the hand (for tie-breaks)
-      const highCardSuit = Math.max(...hand.map(c => SUIT_RANK[c.suit]));
-
       let multiplier = 1;
       let type = 'normal';
-      let pokSuit = 0;
 
-      // Check for 3 of the same suit (highest priority)
       if (hand.length === 3 && suitCounts.includes(3)) {
-        multiplier = 3;
-        type = 'pok3';
-        const flushSuit = Object.keys(suitCount).find(s => suitCount[s] === 3);
-        pokSuit = SUIT_RANK[flushSuit];
+        multiplier = 3; type = 'pwint3';
+      } else if (hand.length === 2 && suitCounts.includes(2)) {
+        multiplier = 2; type = 'pwint2';
       }
-      // Check for 2 of the same suit
-      else if (hand.length === 2 && suitCounts.includes(2)) {
-        multiplier = 2;
-        type = 'pok2';
-        const flushSuit = Object.keys(suitCount).find(s => suitCount[s] === 2);
-        pokSuit = SUIT_RANK[flushSuit];
+
+      // Find the HIGHEST-RANKING card in the hand
+      // (by face value; ties broken by suit — but there can only be one
+      // card with the highest rank in a single deck, so this is fine)
+      let highRankValue = 0;
+      let highRankSuit = 0;
+      for (const c of hand) {
+        const rv = RANK_VALUE[c.rank];
+        const sv = SUIT_RANK[c.suit];
+        if (rv > highRankValue ||
+            (rv === highRankValue && sv > highRankSuit)) {
+          highRankValue = rv;
+          highRankSuit = sv;
+        }
       }
 
       // Natural 8 (Chit) / 9 (Koe) — only with exactly 2 cards
@@ -207,33 +211,34 @@
         else if (score === 8) natural = 'chit';
       }
 
-      return { score, multiplier, type, pokSuit, highCardSuit, natural };
+      return { score, multiplier, type, highRankValue, highRankSuit, natural };
     }
 
     // ============================================================
-    //  HAND COMPARISON
+    //  HAND COMPARISON  ★ FIXED ★
     // ------------------------------------------------------------
     // Returns: 1 if A wins, -1 if B wins, 0 if push.
     //
-    // Order:
-    //   1. Higher multiplier wins (3× > 2× > 1×)
-    //   2. Higher POINT score wins
-    //   3. Higher suit hierarchy wins (♠ > ♥ > ♦ > ♣)
+    // ORDER:
+    //   1. Higher POINT score
+    //   2. If points tie → higher HIGHEST-CARD FACE VALUE
+    //   3. If face value ties → higher SUIT of that card
+    //      (♠ > ♥ > ♦ > ♣)
     // ============================================================
     function compareHands(evalA, evalB) {
-      // 1. Compare multiplier tier
-      if (evalA.multiplier !== evalB.multiplier) {
-        return evalA.multiplier > evalB.multiplier ? 1 : -1;
-      }
-
-      // 2. Compare point score
+      // 1. POINT SCORE
       if (evalA.score !== evalB.score) {
         return evalA.score > evalB.score ? 1 : -1;
       }
 
-      // 3. Compare suit hierarchy
-      if (evalA.highCardSuit !== evalB.highCardSuit) {
-        return evalA.highCardSuit > evalB.highCardSuit ? 1 : -1;
+      // 2. FACE VALUE of highest card
+      if (evalA.highRankValue !== evalB.highRankValue) {
+        return evalA.highRankValue > evalB.highRankValue ? 1 : -1;
+      }
+
+      // 3. SUIT of that highest card
+      if (evalA.highRankSuit !== evalB.highRankSuit) {
+        return evalA.highRankSuit > evalB.highRankSuit ? 1 : -1;
       }
 
       return 0;
@@ -242,19 +247,7 @@
     // ============================================================
     //  PAYOUT CALCULATION
     // ------------------------------------------------------------
-    // Base bet deducted at DEAL time.
-    //
-    // PLAYER WINS:
-    //   winnings  = bet × playerMultiplier
-    //   netChange = bet (stake back) + winnings
-    //
-    // DEALER WINS:
-    //   totalLoss = bet × dealerMultiplier
-    //   extraLoss = totalLoss - bet (base already taken)
-    //   netChange = -extraLoss
-    //
-    // PUSH:
-    //   netChange = bet (refund)
+    // Base bet is deducted at DEAL time.
     // ============================================================
     function calculatePayout(playerEval, dealerEval, bet) {
       const cmp = compareHands(playerEval, dealerEval);
@@ -292,9 +285,9 @@
 
     function getHandLabel(type) {
       switch (type) {
-        case 'pok3': return 'POK ×3';
-        case 'pok2': return 'POK ×2';
-        default:     return '';
+        case 'pwint3': return 'PWINT ×3';
+        case 'pwint2': return 'PWINT ×2';
+        default:       return '';
       }
     }
 
@@ -332,7 +325,6 @@
       renderCards(dealerCardsDiv, dealerHand, hideDealer);
       dealerChipsSpan.textContent = '∞';
 
-      // Dealer result tag
       if (roundEnded && dealerHand.length >= 2) {
         const ev = evaluateHand(dealerHand);
         let text = `${ev.score} pts`;
@@ -343,12 +335,10 @@
         dealerResultDiv.innerHTML = '';
       }
 
-      // Player cards
       renderCards(playerCardsDiv, playerHand, false);
       playerChipsDisplay.textContent = playerChips;
       myChipsSpan.textContent = playerChips;
 
-      // Player status badge
       if (roundActive && !roundEnded) {
         if (playerTurn) {
           playerStatusDiv.innerHTML = '<span class="status-badge acting">🎯 Your Turn</span>';
@@ -362,7 +352,6 @@
         playerSeat.classList.remove('active-turn');
       }
 
-      // Player result tag
       if (roundEnded && playerHand.length >= 2) {
         const ev = evaluateHand(playerHand);
         let text = `${ev.score} pts`;
@@ -373,14 +362,12 @@
         playerResultDiv.innerHTML = '';
       }
 
-      // Buttons
       const canAct = playerTurn && roundActive && !roundEnded;
       hitBtn.disabled = !canAct;
       standBtn.disabled = !canAct;
       dealBtn.disabled = roundActive || roundEnded;
       betInput.disabled = roundActive || roundEnded;
 
-      // Status message
       if (!roundEnded && roundActive) {
         statusMsg.textContent = playerTurn
           ? '🎯 Your turn! Hit or Stand'
@@ -416,7 +403,6 @@
       const playerEval = evaluateHand(playerHand);
       const dealerEval = evaluateHand(dealerHand);
 
-      // Natural 8/9 → auto-showdown
       if (playerEval.natural || dealerEval.natural) {
         playerTurn = false;
         let msg = '⚡ Natural!';
@@ -474,7 +460,6 @@
       if (roundEnded) return;
 
       let dealerEval = evaluateHand(dealerHand);
-      // Dealer AI: hit on score < 4, up to 3 cards
       while (dealerEval.score < 4 && deck.length > 0 && dealerHand.length < 3) {
         dealerHand.push(deck.pop());
         dealerEval = evaluateHand(dealerHand);
@@ -500,7 +485,6 @@
       const payout = calculatePayout(playerEval, dealerEval, currentBet);
 
       playerChips += payout.netChange;
-
       statusMsg.textContent = payout.message;
 
       if (payout.outcome === 'win') {
