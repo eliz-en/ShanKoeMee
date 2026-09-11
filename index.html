@@ -63,16 +63,21 @@
 
 <script>
   // ============================================================
-  //  SHAN KOE MEE 
+  //  SHAN KOE MEE — Final Rules
+  //
+  //  MULTIPLIERS:
+  //    1×  — Normal hand (different number, different suit)
+  //    2×  — 2 cards of same SUIT  OR  2 cards of same NUMBER
+  //    3×  — 3 cards of same SUIT
+  //    5×  — 3 cards of same NUMBER (Three of a Kind)
   //
   //  Suit hierarchy:  ♠ Spade > ♥ Heart > ♦ Diamond > ♣ Club
   //
-  //  ★ COMPARISON ORDER:
+  //  ★ COMPARISON ORDER (always check points first):
   //    1. Higher POINT score wins
   //    2. If points tie → higher HIGHEST-CARD FACE VALUE wins
   //       (K > Q > J > 10 > 9 > ... > A)
-  //    3. If face value ties → higher SUIT of that card wins
-  //       (♠ > ♥ > ♦ > ♣)
+  //    3. If face value ties → higher SUIT wins
   // ============================================================
   (function () {
     'use strict';
@@ -105,7 +110,7 @@
       '♣': 1    // Club    — lowest
     };
 
-    // Rank face values (K highest, A lowest)
+    // Face value order: K highest, A lowest
     const RANK_VALUE = {
       'A': 1,  '2': 2,  '3': 3,  '4': 4,  '5': 5,  '6': 6,  '7': 7,
       '8': 8,  '9': 9,  '10': 10, 'J': 11, 'Q': 12, 'K': 13
@@ -157,8 +162,9 @@
     // ------------------------------------------------------------
     // Returns:
     //   score           : mod-10 point total
-    //   multiplier      : 1 | 2 | 3  (2 = 2 same suit, 3 = 3 same suit)
-    //   type            : 'normal' | 'pwint2' | 'pwint3'
+    //   multiplier      : 1 | 2 | 3 | 5
+    //   type            : 'normal' | 'pairSuit' | 'pairRank'
+    //                   | 'tripleSuit' | 'tripleRank'
     //   highRankValue   : face value of the highest-ranking card
     //   highRankSuit    : suit-rank of that highest-ranking card
     //   natural         : 'koe' (9) | 'chit' (8) | null
@@ -173,25 +179,47 @@
 
       const score = hand.reduce((sum, c) => sum + c.value, 0) % 10;
 
-      // Count suits (for multiplier)
+      // Count suits and ranks
       const suitCount = {};
+      const rankCount = {};
       for (const c of hand) {
         suitCount[c.suit] = (suitCount[c.suit] || 0) + 1;
+        rankCount[c.rank] = (rankCount[c.rank] || 0) + 1;
       }
       const suitCounts = Object.values(suitCount);
+      const rankCounts = Object.values(rankCount);
 
       let multiplier = 1;
       let type = 'normal';
 
-      if (hand.length === 3 && suitCounts.includes(3)) {
-        multiplier = 3; type = 'pwint3';
-      } else if (hand.length === 2 && suitCounts.includes(2)) {
-        multiplier = 2; type = 'pwint2';
+      // --- TRIPLE (3 cards) ---
+      if (hand.length === 3) {
+        // Three of a Kind (same rank) → 5×  (highest priority)
+        if (rankCounts.includes(3)) {
+          multiplier = 5;
+          type = 'tripleRank';
+        }
+        // Three cards same suit → 3×
+        else if (suitCounts.includes(3)) {
+          multiplier = 3;
+          type = 'tripleSuit';
+        }
+      }
+      // --- PAIR (2 cards) ---
+      else if (hand.length === 2) {
+        // Same rank → 2×
+        if (rankCounts.includes(2)) {
+          multiplier = 2;
+          type = 'pairRank';
+        }
+        // Same suit → 2×
+        else if (suitCounts.includes(2)) {
+          multiplier = 2;
+          type = 'pairSuit';
+        }
       }
 
       // Find the HIGHEST-RANKING card in the hand
-      // (by face value; ties broken by suit — but there can only be one
-      // card with the highest rank in a single deck, so this is fine)
       let highRankValue = 0;
       let highRankSuit = 0;
       for (const c of hand) {
@@ -215,15 +243,14 @@
     }
 
     // ============================================================
-    //  HAND COMPARISON  ★ FIXED ★
+    //  HAND COMPARISON
     // ------------------------------------------------------------
     // Returns: 1 if A wins, -1 if B wins, 0 if push.
     //
-    // ORDER:
+    // ORDER (always check points first):
     //   1. Higher POINT score
     //   2. If points tie → higher HIGHEST-CARD FACE VALUE
-    //   3. If face value ties → higher SUIT of that card
-    //      (♠ > ♥ > ♦ > ♣)
+    //   3. If face value ties → higher SUIT
     // ============================================================
     function compareHands(evalA, evalB) {
       // 1. POINT SCORE
@@ -248,6 +275,15 @@
     //  PAYOUT CALCULATION
     // ------------------------------------------------------------
     // Base bet is deducted at DEAL time.
+    //
+    // PLAYER WINS:
+    //   winnings  = bet × playerMultiplier
+    //   netChange = bet (stake back) + winnings
+    //
+    // DEALER WINS:
+    //   totalLoss = bet × dealerMultiplier
+    //   extraLoss = totalLoss - bet (base already taken)
+    //   netChange = -extraLoss
     // ============================================================
     function calculatePayout(playerEval, dealerEval, bet) {
       const cmp = compareHands(playerEval, dealerEval);
@@ -285,9 +321,11 @@
 
     function getHandLabel(type) {
       switch (type) {
-        case 'pwint3': return 'PWINT ×3';
-        case 'pwint2': return 'PWINT ×2';
-        default:       return '';
+        case 'tripleRank': return 'TRIPLE ×5';
+        case 'tripleSuit': return 'FLUSH ×3';
+        case 'pairRank':   return 'PAIR ×2';
+        case 'pairSuit':   return 'PWINT ×2';
+        default:           return '';
       }
     }
 
@@ -325,6 +363,7 @@
       renderCards(dealerCardsDiv, dealerHand, hideDealer);
       dealerChipsSpan.textContent = '∞';
 
+      // Dealer result tag
       if (roundEnded && dealerHand.length >= 2) {
         const ev = evaluateHand(dealerHand);
         let text = `${ev.score} pts`;
@@ -335,10 +374,12 @@
         dealerResultDiv.innerHTML = '';
       }
 
+      // Player cards
       renderCards(playerCardsDiv, playerHand, false);
       playerChipsDisplay.textContent = playerChips;
       myChipsSpan.textContent = playerChips;
 
+      // Player status badge
       if (roundActive && !roundEnded) {
         if (playerTurn) {
           playerStatusDiv.innerHTML = '<span class="status-badge acting">🎯 Your Turn</span>';
@@ -352,6 +393,7 @@
         playerSeat.classList.remove('active-turn');
       }
 
+      // Player result tag
       if (roundEnded && playerHand.length >= 2) {
         const ev = evaluateHand(playerHand);
         let text = `${ev.score} pts`;
@@ -362,6 +404,7 @@
         playerResultDiv.innerHTML = '';
       }
 
+      // Buttons
       const canAct = playerTurn && roundActive && !roundEnded;
       hitBtn.disabled = !canAct;
       standBtn.disabled = !canAct;
@@ -403,6 +446,7 @@
       const playerEval = evaluateHand(playerHand);
       const dealerEval = evaluateHand(dealerHand);
 
+      // Natural 8/9 → auto-showdown
       if (playerEval.natural || dealerEval.natural) {
         playerTurn = false;
         let msg = '⚡ Natural!';
@@ -460,6 +504,7 @@
       if (roundEnded) return;
 
       let dealerEval = evaluateHand(dealerHand);
+      // Dealer AI: hit on score < 4, up to 3 cards
       while (dealerEval.score < 4 && deck.length > 0 && dealerHand.length < 3) {
         dealerHand.push(deck.pop());
         dealerEval = evaluateHand(dealerHand);
