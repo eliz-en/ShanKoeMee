@@ -24,8 +24,6 @@
     const howToPlayBtn = document.getElementById('howToPlayBtn');
     const howToPlayModal = document.getElementById('howToPlayModal');
     const modalCloseBtn = document.getElementById('modalCloseBtn');
-
-    // Points display elements
     const playerPointsDisplay = document.getElementById('playerPointsDisplay');
     const playerPointsValue = document.getElementById('playerPointsValue');
     const playerPointsType = document.getElementById('playerPointsType');
@@ -88,13 +86,14 @@
     }
 
     // ============================================================
-    //  HAND EVALUATION
+    //  HAND EVALUATION — WITH THREE OF A KIND FLAG
     // ============================================================
     function evaluateHand(hand) {
       if (!hand || hand.length === 0) {
         return {
           score: 0, multiplier: 1, type: 'normal',
-          highRankValue: 0, highRankSuit: 0, natural: null
+          highRankValue: 0, highRankSuit: 0, natural: null,
+          isTripleRank: false, tripleRankValue: 0, tripleHighSuit: 0
         };
       }
 
@@ -111,11 +110,24 @@
 
       let multiplier = 1;
       let type = 'normal';
+      let isTripleRank = false;
+      let tripleRankValue = 0;
+      let tripleHighSuit = 0;
 
       if (hand.length === 3) {
+        // ⭐ THREE OF A KIND — highest priority
         if (rankCounts.includes(3)) {
-          multiplier = 5; type = 'tripleRank';
-        } else if (suitCounts.includes(3)) {
+          multiplier = 5;
+          type = 'tripleRank';
+          isTripleRank = true;
+          const tripleRank = Object.keys(rankCount).find(r => rankCount[r] === 3);
+          tripleRankValue = RANK_VALUE[tripleRank];
+          tripleHighSuit = Math.max(
+            ...hand.filter(c => c.rank === tripleRank).map(c => SUIT_RANK[c.suit])
+          );
+        }
+        // Three same suit → 3×
+        else if (suitCounts.includes(3)) {
           multiplier = 3; type = 'tripleSuit';
         }
       } else if (hand.length === 2) {
@@ -144,13 +156,33 @@
         else if (score === 8) natural = 'chit';
       }
 
-      return { score, multiplier, type, highRankValue, highRankSuit, natural };
+      return {
+        score, multiplier, type,
+        highRankValue, highRankSuit, natural,
+        isTripleRank, tripleRankValue, tripleHighSuit
+      };
     }
 
     // ============================================================
-    //  HAND COMPARISON
+    //  HAND COMPARISON — THREE OF A KIND WINS FIRST
     // ============================================================
     function compareHands(evalA, evalB) {
+      // ⭐ Step 0: Three of a Kind always beats everything else
+      if (evalA.isTripleRank && !evalB.isTripleRank) return 1;
+      if (!evalA.isTripleRank && evalB.isTripleRank) return -1;
+
+      // Both have Three of a Kind → compare rank, then suit
+      if (evalA.isTripleRank && evalB.isTripleRank) {
+        if (evalA.tripleRankValue !== evalB.tripleRankValue) {
+          return evalA.tripleRankValue > evalB.tripleRankValue ? 1 : -1;
+        }
+        if (evalA.tripleHighSuit !== evalB.tripleHighSuit) {
+          return evalA.tripleHighSuit > evalB.tripleHighSuit ? 1 : -1;
+        }
+        return 0;
+      }
+
+      // Normal order: Points → Face Value → Suit
       if (evalA.score !== evalB.score) {
         return evalA.score > evalB.score ? 1 : -1;
       }
@@ -202,7 +234,7 @@
 
     function getHandLabel(type) {
       switch (type) {
-        case 'tripleRank': return 'TRIPLE ×5';
+        case 'tripleRank': return 'THREE OF A KIND ×5';
         case 'tripleSuit': return 'FLUSH ×3';
         case 'pairRank':   return 'PAIR ×2';
         case 'pairSuit':   return 'PWINT ×2';
@@ -249,11 +281,7 @@
       }
     }
 
-    // ============================================================
-    //  LIVE POINTS DISPLAY
-    // ============================================================
     function updatePlayerPoints() {
-      // Hide if no cards
       if (!playerHand || playerHand.length === 0) {
         playerPointsValue.textContent = '—';
         playerPointsType.style.display = 'none';
@@ -263,16 +291,11 @@
       }
 
       const ev = evaluateHand(playerHand);
-
-      // Update point value
       playerPointsValue.textContent = ev.score;
-
-      // Update hand type label
       playerPointsType.textContent = getShortHandLabel(ev.type);
       playerPointsType.className = 'points-type ' + ev.type;
       playerPointsType.style.display = 'inline-block';
 
-      // Show natural badge if applicable
       if (ev.natural && playerHand.length === 2) {
         playerNaturalBadge.textContent = ev.natural === 'koe' ? '⚡ NATURAL KOE' : '⚡ NATURAL CHIT';
         playerNaturalBadge.style.display = 'inline-block';
@@ -280,7 +303,6 @@
         playerNaturalBadge.style.display = 'none';
       }
 
-      // Highlight the panel while it's the player's turn
       if (playerTurn && roundActive && !roundEnded) {
         playerPointsDisplay.classList.add('highlight');
       } else {
@@ -288,9 +310,6 @@
       }
     }
 
-    // ============================================================
-    //  MAIN UI UPDATE
-    // ============================================================
     function updateUI() {
       const hideDealer = (roundActive && !roundEnded && !dealerCardsRevealed);
       renderCards(dealerCardsDiv, dealerHand, hideDealer);
@@ -310,7 +329,6 @@
       playerChipsDisplay.textContent = playerChips;
       myChipsSpan.textContent = playerChips;
 
-      // ---- LIVE POINTS DISPLAY ----
       updatePlayerPoints();
 
       if (roundActive && !roundEnded) {
@@ -345,9 +363,13 @@
       if (!roundEnded && roundActive) {
         if (playerTurn) {
           const ev = evaluateHand(playerHand);
-          statusMsg.textContent = `🎯 You have ${ev.score} points — Hit or Stand?`;
+          if (ev.isTripleRank) {
+            statusMsg.textContent = `⭐ THREE OF A KIND ×5!`;
+          } else {
+            statusMsg.textContent = `🎯 You have ${ev.score} points — Hit or Stand?`;
+          }
         } else {
-          statusMsg.textContent = '🤖 Dealer is thinking...';
+          statusMsg.textContent = '💡 Dealer is thinking...';
         }
       } else if (!roundActive && !roundEnded) {
         statusMsg.textContent = '🃏 Place your bet and DEAL';
@@ -395,7 +417,6 @@
         return;
       }
 
-      // Show the points and let the player decide
       updateUI();
       const ev = evaluateHand(playerHand);
       statusMsg.textContent = `🎯 You have ${ev.score} points — Hit or Stand?`;
@@ -420,9 +441,12 @@
           setTimeout(dealerTurn, 1000);
         }, 800);
       } else {
-        // Still can act — show new points
         const ev = evaluateHand(playerHand);
-        statusMsg.textContent = `🎯 You now have ${ev.score} points — Hit or Stand?`;
+        if (ev.isTripleRank) {
+          statusMsg.textContent = `⭐ THREE OF A KIND ×5! Hit or Stand?`;
+        } else {
+          statusMsg.textContent = `🎯 You now have ${ev.score} points — Hit or Stand?`;
+        }
       }
     }
 
