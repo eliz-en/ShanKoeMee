@@ -1,5 +1,16 @@
+
   // ============================================================
   //  SHAN KOE MEE — Final Rules
+  //
+  //  MULTIPLIERS:
+  //    1×  — Normal
+  //    2×  — 2 cards same SUIT or same NUMBER
+  //    3×  — 3 cards same SUIT
+  //    5×  — 3 cards same NUMBER (Three of a Kind) ⭐ ULTIMATE
+  //
+  //  COMPARISON:
+  //    0. THREE OF A KIND always beats everything
+  //    1. Points → Face Value (A high, 2 low) → Suit
   // ============================================================
   (function () {
     'use strict';
@@ -17,6 +28,7 @@
     const statusMsg = document.getElementById('statusMessage');
     const betInput = document.getElementById('betAmount');
     const dealBtn = document.getElementById('dealBtn');
+    const allInBtn = document.getElementById('allInBtn');
     const hitBtn = document.getElementById('hitBtn');
     const standBtn = document.getElementById('standBtn');
     const chipOutOverlay = document.getElementById('chipOutOverlay');
@@ -39,9 +51,12 @@
       '♣': 1    // Club    — lowest
     };
 
+    // FACE VALUE for tie-breaks only
+    // ⭐ Ace is the HIGHEST (14), then K, Q, J, 10, 9, ... 2
     const RANK_VALUE = {
-      'A': 1,  '2': 2,  '3': 3,  '4': 4,  '5': 5,  '6': 6,  '7': 7,
-      '8': 8,  '9': 9,  '10': 10, 'J': 11, 'Q': 12, 'K': 13
+      '2': 2,  '3': 3,  '4': 4,  '5': 5,  '6': 6,  '7': 7,
+      '8': 8,  '9': 9,  '10': 10, 'J': 11, 'Q': 12, 'K': 13,
+      'A': 14  // ⭐ Ace = highest for tiebreaks (but still counts as 1 point)
     };
 
     // ============================================================
@@ -68,7 +83,7 @@
       for (const s of suits) {
         for (const r of ranks) {
           let value = 0;
-          if (r === 'A') value = 1;
+          if (r === 'A') value = 1;              // ⭐ Ace = 1 point
           else if (r === '10' || r === 'J' || r === 'Q' || r === 'K') value = 0;
           else value = parseInt(r, 10);
           d.push({ rank: r, suit: s, value });
@@ -86,7 +101,7 @@
     }
 
     // ============================================================
-    //  HAND EVALUATION — WITH THREE OF A KIND FLAG
+    //  HAND EVALUATION
     // ============================================================
     function evaluateHand(hand) {
       if (!hand || hand.length === 0) {
@@ -115,7 +130,6 @@
       let tripleHighSuit = 0;
 
       if (hand.length === 3) {
-        // ⭐ THREE OF A KIND — highest priority
         if (rankCounts.includes(3)) {
           multiplier = 5;
           type = 'tripleRank';
@@ -125,9 +139,7 @@
           tripleHighSuit = Math.max(
             ...hand.filter(c => c.rank === tripleRank).map(c => SUIT_RANK[c.suit])
           );
-        }
-        // Three same suit → 3×
-        else if (suitCounts.includes(3)) {
+        } else if (suitCounts.includes(3)) {
           multiplier = 3; type = 'tripleSuit';
         }
       } else if (hand.length === 2) {
@@ -164,14 +176,13 @@
     }
 
     // ============================================================
-    //  HAND COMPARISON — THREE OF A KIND WINS FIRST
+    //  HAND COMPARISON
     // ============================================================
     function compareHands(evalA, evalB) {
-      // ⭐ Step 0: Three of a Kind always beats everything else
+      // Three of a Kind always beats everything
       if (evalA.isTripleRank && !evalB.isTripleRank) return 1;
       if (!evalA.isTripleRank && evalB.isTripleRank) return -1;
 
-      // Both have Three of a Kind → compare rank, then suit
       if (evalA.isTripleRank && evalB.isTripleRank) {
         if (evalA.tripleRankValue !== evalB.tripleRankValue) {
           return evalA.tripleRankValue > evalB.tripleRankValue ? 1 : -1;
@@ -182,7 +193,7 @@
         return 0;
       }
 
-      // Normal order: Points → Face Value → Suit
+      // Normal: Points → Face Value → Suit
       if (evalA.score !== evalB.score) {
         return evalA.score > evalB.score ? 1 : -1;
       }
@@ -355,24 +366,27 @@
       }
 
       const canAct = playerTurn && roundActive && !roundEnded;
+      const canBet = !roundActive && !roundEnded;
+
       hitBtn.disabled = !canAct;
       standBtn.disabled = !canAct;
-      dealBtn.disabled = roundActive || roundEnded;
-      betInput.disabled = roundActive || roundEnded;
+      dealBtn.disabled = !canBet;
+      allInBtn.disabled = !canBet || playerChips <= 0;
+      betInput.disabled = !canBet;
 
       if (!roundEnded && roundActive) {
         if (playerTurn) {
           const ev = evaluateHand(playerHand);
           if (ev.isTripleRank) {
-            statusMsg.textContent = `⭐ THREE OF A KIND ×5!`;
+            statusMsg.textContent = `⭐ THREE OF A KIND ×5! Hit or Stand?`;
           } else {
             statusMsg.textContent = `🎯 You have ${ev.score} points — Hit or Stand?`;
           }
         } else {
-          statusMsg.textContent = '💡 Dealer is thinking...';
+          statusMsg.textContent = '🤖 Dealer is thinking...';
         }
       } else if (!roundActive && !roundEnded) {
-        statusMsg.textContent = '🃏 Place your bet and DEAL';
+        statusMsg.textContent = '🃏 Place your bet and DEAL (or ALL IN!)';
       }
     }
 
@@ -421,6 +435,23 @@
       const ev = evaluateHand(playerHand);
       statusMsg.textContent = `🎯 You have ${ev.score} points — Hit or Stand?`;
       roundInProgress = false;
+    }
+
+    // ⭐ ALL IN handler
+    function handleAllIn() {
+      if (roundActive || roundEnded || roundInProgress) return;
+      if (playerChips <= 0) return;
+
+      // Set bet to full chip stack
+      betInput.value = playerChips;
+
+      // Brief confirmation message
+      statusMsg.textContent = `🔥 ALL IN! Betting ${playerChips} chips...`;
+
+      // Small delay for the player to see it, then deal
+      setTimeout(() => {
+        startRound();
+      }, 400);
     }
 
     function playerHit() {
@@ -532,13 +563,14 @@
       playerNaturalBadge.style.display = 'none';
       playerPointsDisplay.classList.remove('highlight');
       playerSeat.classList.remove('active-turn');
-      statusMsg.textContent = '🃏 Place your bet and DEAL';
+      statusMsg.textContent = '🃏 Place your bet and DEAL (or ALL IN!)';
       updateUI();
     }
 
     function restartGame() {
       chipOutOverlay.style.display = 'none';
       playerChips = 500;
+      betInput.value = 10;
       resetGame();
     }
 
@@ -559,6 +591,7 @@
     //  EVENT LISTENERS
     // ============================================================
     dealBtn.addEventListener('click', startRound);
+    allInBtn.addEventListener('click', handleAllIn);
     hitBtn.addEventListener('click', playerHit);
     standBtn.addEventListener('click', playerStand);
     restartBtn.addEventListener('click', restartGame);

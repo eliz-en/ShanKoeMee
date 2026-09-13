@@ -1,4 +1,4 @@
-* {
+    * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
@@ -11,15 +11,11 @@
       --gold-dark: #b8860b;
       --felt-light: #1a6b3a;
       --felt-dark: #0a2a1a;
-      --ink: #0a0a0a;
-      --panel: rgba(0, 0, 0, 0.35);
-      --panel-deep: rgba(0, 0, 0, 0.55);
     }
 
     body {
       min-height: 100vh;
-      background:
-        radial-gradient(ellipse at top, #1a1a1a 0%, #050505 100%);
+      background: radial-gradient(ellipse at top, #1a1a1a 0%, #050505 100%);
       display: flex;
       justify-content: center;
       align-items: center;
@@ -27,9 +23,6 @@
       overflow-x: hidden;
     }
 
-    /* ============================================================
-       CASINO TABLE WRAPPER
-       ============================================================ */
     .game-wrapper {
       width: 100%;
       max-width: 980px;
@@ -45,7 +38,6 @@
         0 0 0 14px #050505,
         inset 0 2px 4px rgba(255,215,0,0.15),
         inset 0 -20px 40px rgba(0,0,0,0.5);
-      border: none;
       position: relative;
       overflow: hidden;
     }
@@ -74,9 +66,7 @@
       z-index: 1;
     }
 
-    /* ============================================================
-       HEADER
-       ============================================================ */
+    /* ============ HEADER ============ */
     .game-header {
       display: flex;
       justify-content: space-between;
@@ -95,9 +85,7 @@
       font-size: 1.4rem;
       font-weight: 800;
       letter-spacing: 3px;
-      text-shadow:
-        0 0 20px rgba(255,204,0,0.3),
-        0 2px 0 #5a3a00;
+      text-shadow: 0 0 20px rgba(255,204,0,0.3), 0 2px 0 #5a3a00;
       line-height: 1.1;
     }
 
@@ -165,9 +153,7 @@
       box-shadow: 0 4px 12px rgba(255,204,0,0.2);
     }
 
-    /* ============================================================
-       DEALER AREA
-       ============================================================ */
+    /* ============ DEALER ============ */
     .dealer-area {
       background: rgba(0,0,0,0.3);
       border-radius: 30px;
@@ -217,9 +203,7 @@
       flex-wrap: wrap;
     }
 
-    /* ============================================================
-       PLAYERS GRID
-       ============================================================ */
+    /* ============ PLAYERS ============ */
     .players-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -228,8 +212,7 @@
     }
 
     .player-seat {
-      background:
-        linear-gradient(180deg, rgba(0,0,0,0.25), rgba(0,0,0,0.4));
+      background: linear-gradient(180deg, rgba(0,0,0,0.25), rgba(0,0,0,0.4));
       border-radius: 24px;
       padding: 12px 12px 14px;
       border: 1px solid rgba(255,255,255,0.06);
@@ -240,9 +223,7 @@
 
     .player-seat.active-turn {
       border-color: var(--gold);
-      box-shadow:
-        0 0 25px rgba(255,204,0,0.25),
-        inset 0 0 15px rgba(255,204,0,0.08);
+      box-shadow: 0 0 25px rgba(255,204,0,0.25), inset 0 0 15px rgba(255,204,0,0.08);
     }
 
     .player-seat.active-turn::after {
@@ -305,9 +286,7 @@
       flex-wrap: wrap;
     }
 
-    /* ============================================================
-       POINTS DISPLAY — NEW
-       ============================================================ */
+    /* ============ POINTS DISPLAY ============ */
     .points-display {
       display: flex;
       align-items: center;
@@ -400,9 +379,7 @@
     }
     .status-badge.stood { background: rgba(255,255,255,0.08); color: #aaa; }
 
-    /* ============================================================
-       CARDS
-       ============================================================ */
+    /* ============ CARDS ============ */
     .card {
       background: linear-gradient(180deg, #ffffff, #f2f2ec);
       border-radius: 10px;
@@ -414,10 +391,7 @@
       justify-content: center;
       font-weight: 800;
       font-size: 1.1rem;
-      box-shadow:
-        0 3px 10px rgba(0,0,0,0.5),
-        inset 0 1px 0 #fff,
-        inset 0 -1px 0 rgba(0,0,0,0.1);
+      box-shadow: 0 3px 10px rgba(0,0,0,0.5), inset 0 1px 0 #fff, inset 0 -1px 0 rgba(0,0,0,0.1);
       border: 1px solid #ccc;
       padding: 4px 6px;
       position: relative;
@@ -438,13 +412,9 @@
     .card.black { color: #151515; }
 
     .card-back {
-      background:
-        repeating-linear-gradient(45deg, #0a1a4a, #0a1a4a 6px, #1a2f6c 6px, #1a2f6c 12px);
+      background: repeating-linear-gradient(45deg, #0a1a4a, #0a1a4a 6px, #1a2f6c 6px, #1a2f6c 12px);
       border: 2px solid var(--gold);
-      box-shadow:
-        0 3px 10px rgba(0,0,0,0.5),
-        inset 0 0 0 2px rgba(0,0,0,0.3),
-        inset 0 0 20px rgba(255,215,0,0.15);
+      box-shadow: 0 3px 10px rgba(0,0,0,0.5), inset 0 0 0 2px rgba(0,0,0,0.3), inset 0 0 20px rgba(255,215,0,0.15);
       color: var(--gold);
       font-size: 1.1rem;
       display: flex;
@@ -492,9 +462,7 @@
     }
     .result-tag.push { background: rgba(255,255,255,0.1); color: #ddd; }
 
-    /* ============================================================
-       ACTION PANEL
-       ============================================================ */
+    /* ============ ACTION PANEL ============ */
     .action-panel {
       background: linear-gradient(180deg, rgba(0,0,0,0.5), rgba(0,0,0,0.65));
       border-radius: 50px;
@@ -505,9 +473,7 @@
       justify-content: center;
       gap: 10px 16px;
       border: 1px solid rgba(255,215,0,0.15);
-      box-shadow:
-        inset 0 1px 0 rgba(255,215,0,0.1),
-        0 4px 20px rgba(0,0,0,0.4);
+      box-shadow: inset 0 1px 0 rgba(255,215,0,0.1), 0 4px 20px rgba(0,0,0,0.4);
       margin: 8px 0 4px 0;
     }
 
@@ -583,34 +549,48 @@
     .btn-gold {
       background: linear-gradient(180deg, #ffe066, #ffcc00 50%, #e6b800);
       color: #1a1a1a;
-      box-shadow:
-        0 4px 0 #8a6d0f,
-        0 6px 18px rgba(255,204,0,0.3),
-        inset 0 1px 0 rgba(255,255,255,0.5);
+      box-shadow: 0 4px 0 #8a6d0f, 0 6px 18px rgba(255,204,0,0.3), inset 0 1px 0 rgba(255,255,255,0.5);
       text-shadow: 0 1px 0 rgba(255,255,255,0.3);
     }
 
     .btn-gold:hover:not(:disabled) {
       transform: translateY(-2px);
-      box-shadow:
-        0 6px 0 #8a6d0f,
-        0 10px 25px rgba(255,204,0,0.4),
-        inset 0 1px 0 rgba(255,255,255,0.5);
+      box-shadow: 0 6px 0 #8a6d0f, 0 10px 25px rgba(255,204,0,0.4), inset 0 1px 0 rgba(255,255,255,0.5);
     }
 
     .btn-gold:active:not(:disabled) {
       transform: translateY(2px);
-      box-shadow:
-        0 1px 0 #8a6d0f,
-        0 2px 8px rgba(255,204,0,0.3);
+      box-shadow: 0 1px 0 #8a6d0f, 0 2px 8px rgba(255,204,0,0.3);
+    }
+
+    /* ⭐ ALL IN BUTTON */
+    .btn-allin {
+      background: linear-gradient(180deg, #ff4444, #c0000f 50%, #8a0009);
+      color: #fff;
+      box-shadow: 0 4px 0 #5a0006, 0 6px 18px rgba(255,68,68,0.4), inset 0 1px 0 rgba(255,255,255,0.25);
+      text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+      animation: allinPulse 2s ease-in-out infinite;
+    }
+
+    @keyframes allinPulse {
+      0%, 100% { box-shadow: 0 4px 0 #5a0006, 0 6px 18px rgba(255,68,68,0.4), inset 0 1px 0 rgba(255,255,255,0.25); }
+      50% { box-shadow: 0 4px 0 #5a0006, 0 6px 24px rgba(255,68,68,0.7), inset 0 1px 0 rgba(255,255,255,0.25); }
+    }
+
+    .btn-allin:hover:not(:disabled) {
+      transform: translateY(-2px);
+      filter: brightness(1.1);
+    }
+
+    .btn-allin:active:not(:disabled) {
+      transform: translateY(2px);
+      box-shadow: 0 1px 0 #5a0006;
     }
 
     .btn-dark {
       background: linear-gradient(180deg, #3a3a3a, #222);
       color: #ddd;
-      box-shadow:
-        0 4px 0 #050505,
-        inset 0 1px 0 rgba(255,255,255,0.1);
+      box-shadow: 0 4px 0 #050505, inset 0 1px 0 rgba(255,255,255,0.1);
       border: 1px solid #444;
     }
 
@@ -624,9 +604,7 @@
       box-shadow: 0 1px 0 #050505;
     }
 
-    /* ============================================================
-       HOW TO PLAY MODAL
-       ============================================================ */
+    /* ============ MODAL ============ */
     .modal-overlay {
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
@@ -646,8 +624,7 @@
     }
 
     .modal-content {
-      background:
-        radial-gradient(ellipse at 50% 0%, #1a0f0a, #0a0505 80%);
+      background: radial-gradient(ellipse at 50% 0%, #1a0f0a, #0a0505 80%);
       border: 2px solid var(--gold);
       border-radius: 32px;
       max-width: 720px;
@@ -655,9 +632,7 @@
       max-height: 90vh;
       overflow-y: auto;
       padding: 32px 36px 28px;
-      box-shadow:
-        0 0 80px rgba(255,204,0,0.25),
-        inset 0 1px 0 rgba(255,215,0,0.2);
+      box-shadow: 0 0 80px rgba(255,204,0,0.25), inset 0 1px 0 rgba(255,215,0,0.2);
       position: relative;
       animation: modalSlide 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.1);
     }
@@ -814,9 +789,7 @@
       font-size: 0.85rem;
     }
 
-    .suit-chip .suit {
-      font-size: 1.2rem;
-    }
+    .suit-chip .suit { font-size: 1.2rem; }
 
     .suit-chip.spade .suit { color: #fff; }
     .suit-chip.heart .suit { color: #ff4444; }
@@ -828,9 +801,7 @@
       font-size: 0.7rem;
     }
 
-    /* ============================================================
-       CHIP-OUT OVERLAY
-       ============================================================ */
+    /* ============ OVERLAY ============ */
     .overlay {
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
@@ -845,16 +816,13 @@
     }
 
     .overlay-content {
-      background:
-        radial-gradient(ellipse at 50% 0%, #2a1a0a, #100505 80%);
+      background: radial-gradient(ellipse at 50% 0%, #2a1a0a, #100505 80%);
       border: 2px solid var(--gold);
       border-radius: 40px;
       padding: 44px 52px;
       text-align: center;
       max-width: 440px;
-      box-shadow:
-        0 0 80px rgba(255,204,0,0.3),
-        inset 0 1px 0 rgba(255,215,0,0.2);
+      box-shadow: 0 0 80px rgba(255,204,0,0.3), inset 0 1px 0 rgba(255,215,0,0.2);
     }
 
     .overlay-content .emoji {
@@ -888,9 +856,7 @@
       font-weight: 900;
       border: none;
       cursor: pointer;
-      box-shadow:
-        0 5px 0 #8a6d0f,
-        0 10px 25px rgba(255,204,0,0.3);
+      box-shadow: 0 5px 0 #8a6d0f, 0 10px 25px rgba(255,204,0,0.3);
       transition: all 0.15s ease;
       letter-spacing: 2px;
       text-transform: uppercase;
@@ -898,9 +864,7 @@
 
     .overlay-content .btn-restart:hover {
       transform: translateY(-2px);
-      box-shadow:
-        0 7px 0 #8a6d0f,
-        0 14px 30px rgba(255,204,0,0.4);
+      box-shadow: 0 7px 0 #8a6d0f, 0 14px 30px rgba(255,204,0,0.4);
     }
 
     .overlay-content .btn-restart:active {
@@ -908,9 +872,7 @@
       box-shadow: 0 2px 0 #8a6d0f;
     }
 
-    /* ============================================================
-       RESPONSIVE
-       ============================================================ */
+    /* ============ RESPONSIVE ============ */
     @media (max-width: 640px) {
       .game-wrapper {
         padding: 14px 12px 18px;
